@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "url": "http://host.docker.internal:3001/api/n8n/status",
+        "url": "http://host.docker.internal:3000/api/n8n/status",
         "options": {}
       },
       "name": "Verificar Status",
@@ -51,7 +51,7 @@
     },
     {
       "parameters": {
-        "url": "http://host.docker.internal:3001/api/configuracoes/whatsapp/conectar",
+        "url": "http://host.docker.internal:3000/api/configuracoes/whatsapp/conectar",
         "method": "POST",
         "options": {}
       },
@@ -75,7 +75,7 @@
     },
     {
       "parameters": {
-        "url": "http://host.docker.internal:3001/api/n8n/reset-diario",
+        "url": "http://host.docker.internal:3000/api/n8n/reset-diario",
         "method": "POST",
         "options": {}
       },

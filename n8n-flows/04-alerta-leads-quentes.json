@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "url": "http://host.docker.internal:3001/api/n8n/leads-quentes",
+        "url": "http://host.docker.internal:3000/api/n8n/leads-quentes",
         "options": {}
       },
       "name": "Buscar Leads Quentes",
@@ -44,7 +44,7 @@
     },
     {
       "parameters": {
-        "url": "http://host.docker.internal:3001/api/n8n/status",
+        "url": "http://host.docker.internal:3000/api/n8n/status",
         "options": {}
       },
       "name": "Buscar Status Geral",

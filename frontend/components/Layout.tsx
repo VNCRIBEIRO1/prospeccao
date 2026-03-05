@@ -16,6 +16,7 @@ const menuItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/contatos', label: 'Contatos', icon: Users },
   { href: '/campanhas', label: 'Campanhas', icon: Megaphone },
+  { href: '/mensagens', label: 'Mensagens', icon: MessageSquare },
   { href: '/leads', label: 'Leads', icon: Target },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];

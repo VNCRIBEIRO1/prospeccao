@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "url": "http://host.docker.internal:3001/api/n8n/relatorio",
+        "url": "http://host.docker.internal:3000/api/n8n/relatorio",
         "method": "POST",
         "options": {}
       },
