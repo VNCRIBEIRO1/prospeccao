@@ -1,0 +1,84 @@
+// ============================================
+// Prisma Schema — Banco de Dados PostgreSQL (Neon)
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Contato {
+  id            Int        @id @default(autoincrement())
+  nome          String
+  telefone      String     @unique
+  escritorio    String?
+  cidade        String?
+  areaAtuacao   String?
+  status        String     @default("pendente")
+  // pendente | enviado | respondeu | interessado | fechado | naoInteresse | pendente_followup
+  etapaBot      String     @default("inicio")
+  // inicio | msg1 | msg2 | msg2b | msg2b_fim | msg3a | msg3b | msg3b_repeat | msg3c
+  tentativasSemResposta Int @default(0)
+  ultimoEnvio   DateTime?
+  criadoEm      DateTime   @default(now())
+  atualizadoEm  DateTime   @updatedAt
+
+  mensagens     Mensagem[]
+  leads         Lead[]
+}
+
+model Campanha {
+  id            Int      @id @default(autoincrement())
+  nome          String
+  status        String   @default("pausada")
+  // pausada | ativa | concluida
+  delaySegundos Int      @default(60)
+  limiteDiario  Int      @default(50)
+  totalEnviado  Int      @default(0)
+  enviadosHoje  Int      @default(0)
+  ultimoReset   DateTime @default(now())
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+}
+
+model Lead {
+  id         Int      @id @default(autoincrement())
+  contatoId  Int
+  estagio    String   @default("novo")
+  // novo | interessado | negociando | fechado
+  notas      String?
+  criadoEm   DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  contato    Contato  @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+}
+
+model Mensagem {
+  id         Int      @id @default(autoincrement())
+  contatoId  Int
+  direcao    String
+  // enviada | recebida
+  conteudo   String
+  etapa      String?
+  criadoEm   DateTime @default(now())
+
+  contato    Contato  @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+}
+
+model Configuracao {
+  id    Int    @id @default(autoincrement())
+  chave String @unique
+  valor String
+}
+
+model LogErro {
+  id        Int      @id @default(autoincrement())
+  tipo      String
+  mensagem  String
+  detalhes  String?
+  criadoEm  DateTime @default(now())
+}

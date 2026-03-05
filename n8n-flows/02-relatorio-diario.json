@@ -1,0 +1,34 @@
+{
+  "name": "📊 Relatório Diário (20h)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 20 * * *" }]
+        }
+      },
+      "name": "Todo dia às 20h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "id": "schedule-report"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/relatorio",
+        "method": "POST",
+        "options": {}
+      },
+      "name": "Enviar Relatório",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "id": "send-report"
+    }
+  ],
+  "connections": {
+    "Todo dia às 20h": { "main": [[{ "node": "Enviar Relatório", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

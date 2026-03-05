@@ -1,0 +1,76 @@
+{
+  "name": "📊 Exportar Relatório Semanal",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 8 * * 1" }]
+        }
+      },
+      "name": "Segunda 8h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "id": "schedule-weekly"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/status",
+        "options": {}
+      },
+      "name": "Buscar Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "id": "get-status"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/leads-quentes",
+        "options": {}
+      },
+      "name": "Buscar Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 500],
+      "id": "get-leads"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {},
+        "options": {}
+      },
+      "name": "Juntar Dados",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [680, 400],
+      "id": "merge-data"
+    },
+    {
+      "parameters": {
+        "functionCode": "const status = $('Buscar Status').first().json;\nconst leadsData = $('Buscar Leads').first().json;\nconst leads = leadsData.leads || [];\n\nconst hoje = new Date();\nconst inicioSemana = new Date(hoje);\ninicioSemana.setDate(hoje.getDate() - 7);\n\nlet texto = `📊 *RELATÓRIO SEMANAL*\\n`;\ntexto += `${inicioSemana.toLocaleDateString('pt-BR')} a ${hoje.toLocaleDateString('pt-BR')}\\n\\n`;\n\ntexto += `📱 *WhatsApp:* ${status.whatsapp?.conectado ? '✅ Conectado' : '❌ Desconectado'}\\n\\n`;\n\ntexto += `👥 *Contatos:*\\n`;\ntexto += `• Total: ${status.contatos?.total || 0}\\n`;\ntexto += `• Pendentes: ${status.contatos?.pendente || 0}\\n`;\ntexto += `• Responderam: ${status.contatos?.respondeu || 0}\\n`;\ntexto += `• Leads: ${status.contatos?.lead || 0}\\n`;\ntexto += `• Sem interesse: ${status.contatos?.naoInteresse || 0}\\n\\n`;\n\ntexto += `📈 *Campanhas:*\\n`;\ntexto += `• Total: ${status.campanhas?.total || 0}\\n`;\ntexto += `• Ativas: ${status.campanhas?.ativa || 0}\\n`;\ntexto += `• Concluídas: ${status.campanhas?.concluida || 0}\\n\\n`;\n\nif (leads.length > 0) {\n  texto += `🔥 *Leads Quentes (últimos 7 dias):*\\n`;\n  for (const lead of leads.slice(0, 10)) {\n    texto += `• ${lead.contato?.nome || 'Sem nome'} - ${lead.contato?.telefone || '-'}`;\n    if (lead.interesse) texto += ` (${lead.interesse})`;\n    texto += `\\n`;\n  }\n} else {\n  texto += `🔥 *Leads:* Nenhum lead novo na semana\\n`;\n}\n\ntexto += `\\n✅ Relatório gerado automaticamente pelo n8n`;\n\nreturn [{ json: { texto, resumo: { contatos: status.contatos?.total || 0, leads: leads.length, campanhas: status.campanhas?.total || 0 } } }];"
+      },
+      "name": "Gerar Relatório",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400],
+      "id": "gen-report"
+    }
+  ],
+  "connections": {
+    "Segunda 8h": {
+      "main": [
+        [
+          { "node": "Buscar Status", "type": "main", "index": 0 },
+          { "node": "Buscar Leads", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Buscar Status": { "main": [[{ "node": "Juntar Dados", "type": "main", "index": 0 }]] },
+    "Buscar Leads": { "main": [[{ "node": "Juntar Dados", "type": "main", "index": 1 }]] },
+    "Juntar Dados": { "main": [[{ "node": "Gerar Relatório", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

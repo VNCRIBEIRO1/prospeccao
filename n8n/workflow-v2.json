@@ -1,0 +1,168 @@
+{
+  "name": "Fluxo WhatsApp - Prospecção Advocacia",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-entrada",
+      "name": "Webhook Entrada",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\n\nlet telefone, mensagem;\n\nif (payload.data?.message) {\n  telefone = (payload.data.key?.remoteJid || '').replace('@s.whatsapp.net', '');\n  mensagem = payload.data.message?.conversation || payload.data.message?.extendedTextMessage?.text || '';\n  if (payload.data.key?.fromMe) {\n    return [{ json: { ignorar: true, motivo: 'mensagem_propria' } }];\n  }\n} else if (payload.telefone && payload.mensagem) {\n  telefone = payload.telefone;\n  mensagem = payload.mensagem;\n} else {\n  return [{ json: { ignorar: true, motivo: 'formato_desconhecido' } }];\n}\n\ntelefone = telefone.replace(/\\D/g, '');\n\nif (!telefone || !mensagem) {\n  return [{ json: { ignorar: true, motivo: 'dados_incompletos' } }];\n}\n\nreturn [{ json: { telefone, mensagem, timestamp: new Date().toISOString(), ignorar: false } }];"
+      },
+      "id": "extrair-dados",
+      "name": "Extrair Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.ignorar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "verificar-ignorar",
+      "name": "Ignorar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://host.docker.internal:3001/api/contatos/telefone/{{ $json.telefone }}"
+      },
+      "id": "buscar-contato",
+      "name": "Buscar Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [910, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const contato = $('Buscar Contato').first().json;\nconst dadosMsg = $('Extrair Dados').first().json;\nconst texto = dadosMsg.mensagem;\nconst etapaAtual = contato.etapaBot || 'msg1';\n\nconst t = texto.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim();\n\nconst opcao1 = t.includes('sim') || t.includes('quero') || t.includes('contratar') || t.includes('conhecer') || t.includes('aceito') || t.includes('bora') || t.includes('vamos');\nconst opcao2 = t.includes('tenho site') || t.includes('ja tenho') || t.includes('duvida') || t.includes('pergunta') || t.includes('como funciona');\nconst opcao3 = t.includes('agora nao') || t.includes('pensar') || t.includes('depois') || t.includes('talvez');\nconst bloqueio = /\\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remover|cancelar|nao me mande|pare de|nao quero mais|me tire|me remove)\\b/.test(t);\n\nlet proximaEtapa = 'atendimento_manual';\nlet novoStatus = null;\nlet notificar = false;\nlet followup = false;\n\nif (bloqueio) {\n  proximaEtapa = 'bloqueado';\n  novoStatus = 'naoInteresse';\n} else {\n  switch (etapaAtual) {\n    case 'inicio':\n    case 'msg1':\n      if (opcao1) { proximaEtapa = 'msg2'; novoStatus = 'respondeu'; }\n      else if (opcao2) { proximaEtapa = 'msg2b'; novoStatus = 'respondeu'; }\n      else if (opcao3) { proximaEtapa = 'msg3c'; novoStatus = 'naoInteresse'; followup = true; }\n      else { proximaEtapa = 'msg2'; novoStatus = 'respondeu'; }\n      break;\n    case 'msg2':\n      if (opcao1) { proximaEtapa = 'msg3a'; novoStatus = 'interessado'; notificar = true; }\n      else if (opcao2) { proximaEtapa = 'msg3b'; novoStatus = 'respondeu'; }\n      else if (opcao3) { proximaEtapa = 'msg3c'; novoStatus = 'pendente_followup'; followup = true; }\n      else { proximaEtapa = 'msg3b'; novoStatus = 'respondeu'; }\n      break;\n    case 'msg2b':\n      if (opcao1) { proximaEtapa = 'msg2b_fim'; novoStatus = 'naoInteresse'; }\n      else { proximaEtapa = 'msg2'; novoStatus = 'respondeu'; }\n      break;\n    case 'msg3b':\n      if (opcao1) { proximaEtapa = 'msg3a'; novoStatus = 'interessado'; notificar = true; }\n      else { proximaEtapa = 'msg3c'; novoStatus = 'pendente_followup'; followup = true; }\n      break;\n    default:\n      proximaEtapa = 'atendimento_manual';\n      break;\n  }\n}\n\nreturn [{ json: { contatoId: contato.id, telefone: dadosMsg.telefone, nome: contato.nome, escritorio: contato.escritorio, cidade: contato.cidade, areaAtuacao: contato.areaAtuacao, etapaAtual, proximaEtapa, novoStatus, notificar, followup, mensagemOriginal: texto } }];"
+      },
+      "id": "detectar-intencao",
+      "name": "Detectar Intenção",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3001/api/webhook/whatsapp",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefone: $json.telefone, mensagem: $json.mensagemOriginal }) }}"
+      },
+      "id": "processar-backend",
+      "name": "Processar no Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1350, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3001/api/mensagens",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contatoId: $('Detectar Intenção').first().json.contatoId, direcao: 'recebida', conteudo: $('Detectar Intenção').first().json.mensagemOriginal, etapa: $('Detectar Intenção').first().json.etapaAtual }) }}"
+      },
+      "id": "registrar-historico",
+      "name": "Registrar Histórico",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'processado', etapa: $('Detectar Intenção').first().json.proximaEtapa }) }}"
+      },
+      "id": "responder-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1790, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ignorado' }) }}"
+      },
+      "id": "responder-ignorado",
+      "name": "Responder Ignorado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [910, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Entrada": {
+      "main": [
+        [{ "node": "Extrair Dados", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extrair Dados": {
+      "main": [
+        [{ "node": "Ignorar?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ignorar?": {
+      "main": [
+        [{ "node": "Responder Ignorado", "type": "main", "index": 0 }],
+        [{ "node": "Buscar Contato", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Contato": {
+      "main": [
+        [{ "node": "Detectar Intenção", "type": "main", "index": 0 }]
+      ]
+    },
+    "Detectar Intenção": {
+      "main": [
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }]
+      ]
+    },
+    "Processar no Backend": {
+      "main": [
+        [{ "node": "Registrar Histórico", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar Histórico": {
+      "main": [
+        [{ "node": "Responder Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

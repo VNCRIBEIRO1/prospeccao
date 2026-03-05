@@ -1,0 +1,350 @@
+import { useState, useEffect, useRef } from 'react';
+import Head from 'next/head';
+import {
+  Search, Upload, Download, Trash2, Edit, Filter,
+  ChevronLeft, ChevronRight, Check
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import api from '../lib/api';
+
+const STATUS_CORES: Record<string, string> = {
+  pendente: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
+  enviado: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+  respondeu: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  interessado: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+  fechado: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  naoInteresse: 'bg-red-500/20 text-red-300 border-red-500/30',
+  pendente_followup: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+};
+
+interface Contato {
+  id: number;
+  nome: string;
+  telefone: string;
+  escritorio: string | null;
+  cidade: string | null;
+  areaAtuacao: string | null;
+  status: string;
+  etapaBot: string;
+  criadoEm: string;
+  _count?: { mensagens: number };
+}
+
+export default function Contatos() {
+  const [contatos, setContatos] = useState<Contato[]>([]);
+  const [total, setTotal] = useState(0);
+  const [pagina, setPagina] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
+  const [busca, setBusca] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
+  const [filtroCidade, setFiltroCidade] = useState('');
+  const [selecionados, setSelecionados] = useState<number[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nome: '', telefone: '', escritorio: '', cidade: '', areaAtuacao: '' });
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    carregarContatos();
+  }, [pagina, filtroStatus, filtroCidade]);
+
+  async function carregarContatos() {
+    try {
+      setLoading(true);
+      const params: Record<string, string> = { page: String(pagina), limit: '30' };
+      if (busca) params.busca = busca;
+      if (filtroStatus) params.status = filtroStatus;
+      if (filtroCidade) params.cidade = filtroCidade;
+
+      const { data } = await api.get('/contatos', { params });
+      setContatos(data.data);
+      setTotal(data.total);
+      setTotalPaginas(data.totalPaginas);
+    } catch (error) {
+      toast.error('Erro ao carregar contatos');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function criarContato(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      await api.post('/contatos', form);
+      toast.success('Contato criado!');
+      setShowForm(false);
+      setForm({ nome: '', telefone: '', escritorio: '', cidade: '', areaAtuacao: '' });
+      carregarContatos();
+    } catch (error: any) {
+      toast.error(error.response?.data?.error || 'Erro ao criar contato');
+    }
+  }
+
+  async function importarCSV(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('arquivo', file);
+
+    try {
+      const { data } = await api.post('/contatos/importar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success(`Importados: ${data.importados} | Duplicados: ${data.duplicados} | Erros: ${data.erros}`);
+      carregarContatos();
+    } catch (error) {
+      toast.error('Erro na importação');
+    }
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
+  async function atualizarStatusMassa(novoStatus: string) {
+    if (selecionados.length === 0) return;
+    try {
+      await api.patch('/contatos/massa/status', { ids: selecionados, status: novoStatus });
+      toast.success(`${selecionados.length} contatos atualizados`);
+      setSelecionados([]);
+      carregarContatos();
+    } catch (error) {
+      toast.error('Erro ao atualizar');
+    }
+  }
+
+  async function excluirContato(id: number) {
+    if (!confirm('Tem certeza?')) return;
+    try {
+      await api.delete(`/contatos/${id}`);
+      toast.success('Contato excluído');
+      carregarContatos();
+    } catch (error) {
+      toast.error('Erro ao excluir');
+    }
+  }
+
+  function exportarCSV() {
+    window.open('/api/contatos/exportar/csv', '_blank');
+  }
+
+  const toggleSelecionado = (id: number) => {
+    setSelecionados((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleTodos = () => {
+    if (selecionados.length === contatos.length) setSelecionados([]);
+    else setSelecionados(contatos.map((c) => c.id));
+  };
+
+  return (
+    <>
+      <Head>
+        <title>Contatos — Prospecção WhatsApp</title>
+      </Head>
+
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <h1 className="text-2xl font-bold text-white">Contatos ({total})</h1>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors"
+            >
+              + Novo Contato
+            </button>
+            <label className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium cursor-pointer transition-colors flex items-center gap-2">
+              <Upload className="w-4 h-4" /> Importar CSV
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={importarCSV}
+              />
+            </label>
+            <button
+              onClick={exportarCSV}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" /> Exportar
+            </button>
+          </div>
+        </div>
+
+        {/* Formulário novo contato */}
+        {showForm && (
+          <form onSubmit={criarContato} className="bg-slate-800 rounded-xl border border-slate-700 p-6">
+            <h3 className="text-lg font-semibold text-white mb-4">Novo Contato</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                { key: 'nome', label: 'Nome *', type: 'text', required: true },
+                { key: 'telefone', label: 'Telefone *', type: 'tel', required: true },
+                { key: 'escritorio', label: 'Escritório', type: 'text' },
+                { key: 'cidade', label: 'Cidade', type: 'text' },
+                { key: 'areaAtuacao', label: 'Área de Atuação', type: 'text' },
+              ].map((field) => (
+                <div key={field.key}>
+                  <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                  <input
+                    type={field.type}
+                    required={field.required}
+                    value={(form as any)[field.key]}
+                    onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-white focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium">
+                Salvar
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Filtros */}
+        <div className="flex flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar por nome, telefone ou escritório..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && carregarContatos()}
+              className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white focus:border-blue-500 focus:outline-none"
+            />
+          </div>
+          <select
+            value={filtroStatus}
+            onChange={(e) => { setFiltroStatus(e.target.value); setPagina(1); }}
+            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white"
+          >
+            <option value="">Todos os status</option>
+            <option value="pendente">Pendente</option>
+            <option value="enviado">Enviado</option>
+            <option value="respondeu">Respondeu</option>
+            <option value="interessado">Interessado</option>
+            <option value="fechado">Fechado</option>
+            <option value="naoInteresse">Não Interesse</option>
+          </select>
+        </div>
+
+        {/* Ações em massa */}
+        {selecionados.length > 0 && (
+          <div className="flex items-center gap-3 bg-blue-600/10 border border-blue-600/30 rounded-lg p-3">
+            <span className="text-sm text-blue-300">{selecionados.length} selecionados</span>
+            <select
+              onChange={(e) => { if (e.target.value) atualizarStatusMassa(e.target.value); e.target.value = ''; }}
+              className="px-3 py-1 bg-slate-800 border border-slate-600 rounded-lg text-sm text-white"
+            >
+              <option value="">Mudar status para...</option>
+              <option value="pendente">Pendente</option>
+              <option value="interessado">Interessado</option>
+              <option value="naoInteresse">Não Interesse</option>
+              <option value="fechado">Fechado</option>
+            </select>
+          </div>
+        )}
+
+        {/* Tabela */}
+        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-700 text-left">
+                  <th className="p-3">
+                    <input type="checkbox" onChange={toggleTodos} checked={selecionados.length === contatos.length && contatos.length > 0} className="rounded" />
+                  </th>
+                  <th className="p-3 text-slate-400 font-medium">Nome</th>
+                  <th className="p-3 text-slate-400 font-medium">Telefone</th>
+                  <th className="p-3 text-slate-400 font-medium hidden md:table-cell">Escritório</th>
+                  <th className="p-3 text-slate-400 font-medium hidden lg:table-cell">Cidade</th>
+                  <th className="p-3 text-slate-400 font-medium hidden lg:table-cell">Área</th>
+                  <th className="p-3 text-slate-400 font-medium">Status</th>
+                  <th className="p-3 text-slate-400 font-medium">Etapa</th>
+                  <th className="p-3 text-slate-400 font-medium">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contatos.map((contato) => (
+                  <tr key={contato.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                    <td className="p-3">
+                      <input
+                        type="checkbox"
+                        checked={selecionados.includes(contato.id)}
+                        onChange={() => toggleSelecionado(contato.id)}
+                        className="rounded"
+                      />
+                    </td>
+                    <td className="p-3 text-white font-medium">{contato.nome}</td>
+                    <td className="p-3 text-slate-300">{contato.telefone}</td>
+                    <td className="p-3 text-slate-300 hidden md:table-cell">{contato.escritorio || '—'}</td>
+                    <td className="p-3 text-slate-300 hidden lg:table-cell">{contato.cidade || '—'}</td>
+                    <td className="p-3 text-slate-300 hidden lg:table-cell">{contato.areaAtuacao || '—'}</td>
+                    <td className="p-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium border ${STATUS_CORES[contato.status] || 'bg-slate-500/20 text-slate-300'}`}>
+                        {contato.status}
+                      </span>
+                    </td>
+                    <td className="p-3 text-slate-400 text-xs">{contato.etapaBot}</td>
+                    <td className="p-3">
+                      <button
+                        onClick={() => excluirContato(contato.id)}
+                        className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                        title="Excluir"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {contatos.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-slate-400">
+                      Nenhum contato encontrado
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Paginação */}
+          {totalPaginas > 1 && (
+            <div className="flex items-center justify-between p-4 border-t border-slate-700">
+              <span className="text-sm text-slate-400">
+                Página {pagina} de {totalPaginas} ({total} contatos)
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPagina(Math.max(1, pagina - 1))}
+                  disabled={pagina === 1}
+                  className="p-2 bg-slate-700 rounded-lg disabled:opacity-50 hover:bg-slate-600"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setPagina(Math.min(totalPaginas, pagina + 1))}
+                  disabled={pagina === totalPaginas}
+                  className="p-2 bg-slate-700 rounded-lg disabled:opacity-50 hover:bg-slate-600"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

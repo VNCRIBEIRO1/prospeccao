@@ -1,0 +1,53 @@
+{
+  "id": "prospeccao-wf",
+  "name": "Fluxo WhatsApp Prospeccao",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prospeccao-whatsapp",
+        "responseMode": "lastNode"
+      },
+      "id": "wh1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nlet telefone, mensagem;\n\nif (payload.body?.data?.message) {\n  telefone = (payload.body.data.key?.remoteJid || '').replace('@s.whatsapp.net', '');\n  mensagem = payload.body.data.message?.conversation || payload.body.data.message?.extendedTextMessage?.text || '';\n  if (payload.body.data.key?.fromMe) return [{ json: { status: 'ignorado', motivo: 'mensagem_propria' } }];\n} else if (payload.body?.telefone && payload.body?.mensagem) {\n  telefone = payload.body.telefone;\n  mensagem = payload.body.mensagem;\n} else {\n  return [{ json: { status: 'ignorado', motivo: 'formato_invalido' } }];\n}\n\ntelefone = telefone.replace(/\\D/g, '');\nif (!telefone || !mensagem) return [{ json: { status: 'ignorado', motivo: 'dados_vazios' } }];\n\n// Chamar backend para processar\nreturn [{ json: { telefone, mensagem, status: 'encaminhado' } }];"
+      },
+      "id": "code1",
+      "name": "Processar Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3001/api/webhook/whatsapp",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefone: $json.telefone, mensagem: $json.mensagem }) }}"
+      },
+      "id": "http1",
+      "name": "Enviar ao Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Processar Mensagem", "type": "main", "index": 0 }]]
+    },
+    "Processar Mensagem": {
+      "main": [[{ "node": "Enviar ao Backend", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

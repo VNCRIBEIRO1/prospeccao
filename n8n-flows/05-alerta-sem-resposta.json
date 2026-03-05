@@ -1,0 +1,76 @@
+{
+  "name": "⏰ Alerta Sem Resposta 24h",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 6 }]
+        }
+      },
+      "name": "A cada 6h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "id": "schedule-no-reply"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/sem-resposta",
+        "options": {}
+      },
+      "name": "Buscar Sem Resposta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "id": "get-no-reply"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.total }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Tem contatos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "id": "check-total"
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = $('Buscar Sem Resposta').first().json;\nconst contatos = data.contatos || [];\n\nlet texto = `⏰ *CONTATOS SEM RESPOSTA (24h+)*\\n`;\ntexto += `Total: ${data.total}\\n\\n`;\n\nconst primeiros = contatos.slice(0, 20);\nfor (const c of primeiros) {\n  const horas = Math.round((Date.now() - new Date(c.ultimaMensagem).getTime()) / 3600000);\n  texto += `• ${c.nome || 'Sem nome'} (${c.telefone}) - ${horas}h sem resposta\\n`;\n}\n\nif (contatos.length > 20) {\n  texto += `\\n... e mais ${contatos.length - 20} contatos\\n`;\n}\n\ntexto += `\\n💡 *Sugestão:* Considere reenviar follow-up ou marcar como sem interesse.`;\n\nreturn [{ json: { texto, total: data.total } }];"
+      },
+      "name": "Formatar Alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200],
+      "id": "format-no-reply"
+    },
+    {
+      "parameters": {},
+      "name": "Nenhum pendente",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "id": "no-pending"
+    }
+  ],
+  "connections": {
+    "A cada 6h": { "main": [[{ "node": "Buscar Sem Resposta", "type": "main", "index": 0 }]] },
+    "Buscar Sem Resposta": { "main": [[{ "node": "Tem contatos?", "type": "main", "index": 0 }]] },
+    "Tem contatos?": {
+      "main": [
+        [{ "node": "Formatar Alerta", "type": "main", "index": 0 }],
+        [{ "node": "Nenhum pendente", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

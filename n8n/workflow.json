@@ -1,0 +1,212 @@
+{
+  "name": "Fluxo WhatsApp - Prospecção Advocacia",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-entrada",
+      "name": "Webhook Entrada",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrair dados da mensagem (suporta Evolution API e formato simplificado)\nconst payload = $input.first().json;\n\nlet telefone, mensagem;\n\nif (payload.data?.message) {\n  // Formato Evolution API v2\n  telefone = (payload.data.key?.remoteJid || '').replace('@s.whatsapp.net', '');\n  mensagem = payload.data.message?.conversation || \n             payload.data.message?.extendedTextMessage?.text || '';\n  \n  // Ignorar mensagens do próprio bot\n  if (payload.data.key?.fromMe) {\n    return [{ json: { ignorar: true, motivo: 'mensagem_propria' } }];\n  }\n} else if (payload.telefone && payload.mensagem) {\n  // Formato simplificado (testes via curl)\n  telefone = payload.telefone;\n  mensagem = payload.mensagem;\n} else {\n  return [{ json: { ignorar: true, motivo: 'formato_desconhecido' } }];\n}\n\n// Limpar telefone\ntelefone = telefone.replace(/\\D/g, '');\n\nif (!telefone || !mensagem) {\n  return [{ json: { ignorar: true, motivo: 'dados_incompletos' } }];\n}\n\nreturn [{ json: { telefone, mensagem, timestamp: new Date().toISOString(), ignorar: false } }];"
+      },
+      "id": "extrair-dados",
+      "name": "Extrair Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.ignorar }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "verificar-ignorar",
+      "name": "Ignorar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://host.docker.internal:3001/api/contatos/telefone/{{ $json.telefone }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "buscar-contato",
+      "name": "Buscar Contato",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [910, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const contato = $('Buscar Contato').first().json;\nconst dadosMsg = $('Extrair Dados').first().json;\nconst texto = dadosMsg.mensagem;\nconst etapaAtual = contato.etapaBot || 'msg1';\n\n// Normalizar texto\nconst t = texto.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim();\n\n// Detecção de intenções\nconst opcao1 = t.includes('1') || t.includes('sim') || t.includes('quero') ||\n  t.includes('contratar') || t.includes('conhecer') || t.includes('pode') ||\n  t.includes('aceito') || t.includes('bora') || t.includes('vamos');\n\nconst opcao2 = t.includes('2') || t.includes('tenho site') || t.includes('ja tenho') ||\n  t.includes('duvida') || t.includes('pergunta') || t.includes('algumas') ||\n  t.includes('como funciona');\n\nconst opcao3 = t.includes('3') || t.includes('agora nao') || t.includes('pensar') ||\n  t.includes('depois') || t.includes('nao') || t.includes('talvez');\n\nconst bloqueio = t.includes('parar') || t.includes('bloquear') || t.includes('spam') || t.includes('sair');\n\nlet proximaEtapa = 'atendimento_manual';\nlet novoStatus = null;\nlet notificar = false;\nlet followup = false;\n\nif (bloqueio) {\n  proximaEtapa = 'bloqueado';\n  novoStatus = 'naoInteresse';\n} else {\n  switch (etapaAtual) {\n    case 'inicio':\n    case 'msg1':\n      if (opcao1) { proximaEtapa = 'msg2'; novoStatus = 'respondeu'; }\n      else if (opcao2) { proximaEtapa = 'msg2b'; novoStatus = 'respondeu'; }\n      else if (opcao3) { proximaEtapa = 'msg3c'; novoStatus = 'naoInteresse'; followup = true; }\n      else { proximaEtapa = 'msg2'; novoStatus = 'respondeu'; }\n      break;\n    case 'msg2':\n      if (opcao1) { proximaEtapa = 'msg3a'; novoStatus = 'interessado'; notificar = true; }\n      else if (opcao2) { proximaEtapa = 'msg3b'; novoStatus = 'respondeu'; }\n      else if (opcao3) { proximaEtapa = 'msg3c'; novoStatus = 'pendente_followup'; followup = true; }\n      else { proximaEtapa = 'msg3b'; novoStatus = 'respondeu'; }\n      break;\n    case 'msg2b':\n      if (opcao1) { proximaEtapa = 'msg2b_fim'; novoStatus = 'naoInteresse'; }\n      else { proximaEtapa = 'msg2'; novoStatus = 'respondeu'; }\n      break;\n    case 'msg3b':\n      if (opcao1) { proximaEtapa = 'msg3a'; novoStatus = 'interessado'; notificar = true; }\n      else if (opcao2) { proximaEtapa = 'msg3c'; novoStatus = 'pendente_followup'; followup = true; }\n      else if (opcao3) { proximaEtapa = 'msg3c'; novoStatus = 'pendente_followup'; followup = true; }\n      else { proximaEtapa = 'msg3c'; novoStatus = 'pendente_followup'; followup = true; }\n      break;\n    default:\n      proximaEtapa = 'atendimento_manual';\n      break;\n  }\n}\n\nreturn [{\n  json: {\n    contatoId: contato.id,\n    telefone: dadosMsg.telefone,\n    nome: contato.nome,\n    escritorio: contato.escritorio,\n    cidade: contato.cidade,\n    areaAtuacao: contato.areaAtuacao,\n    etapaAtual,\n    proximaEtapa,\n    novoStatus,\n    notificar,\n    followup,\n    mensagemOriginal: texto\n  }\n}];"
+      },
+      "id": "detectar-intencao",
+      "name": "Detectar Intenção",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1130, 200]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            { "outputIndex": 0, "value": "msg2" },
+            { "outputIndex": 1, "value": "msg2b" },
+            { "outputIndex": 2, "value": "msg2b_fim" },
+            { "outputIndex": 3, "value": "msg3a" },
+            { "outputIndex": 4, "value": "msg3b" },
+            { "outputIndex": 5, "value": "msg3c" },
+            { "outputIndex": 6, "value": "atendimento_manual" },
+            { "outputIndex": 7, "value": "bloqueado" }
+          ]
+        },
+        "dataPropertyName": "proximaEtapa"
+      },
+      "id": "switch-etapa",
+      "name": "Switch Etapa",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [1350, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:3001/api/webhook/whatsapp",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "telefone", "value": "={{ $json.telefone }}" },
+            { "name": "mensagem", "value": "={{ $json.mensagemOriginal }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "processar-backend",
+      "name": "Processar no Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1570, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:3001/api/mensagens",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "contatoId", "value": "={{ $('Detectar Intenção').first().json.contatoId }}" },
+            { "name": "direcao", "value": "recebida" },
+            { "name": "conteudo", "value": "={{ $('Detectar Intenção').first().json.mensagemOriginal }}" },
+            { "name": "etapa", "value": "={{ $('Detectar Intenção').first().json.etapaAtual }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "registrar-historico",
+      "name": "Registrar Histórico",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1790, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'processado', etapa: $('Detectar Intenção').first().json.proximaEtapa }) }}"
+      },
+      "id": "responder-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2010, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ignorado' }) }}"
+      },
+      "id": "responder-ignorado",
+      "name": "Responder Ignorado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [910, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Entrada": {
+      "main": [
+        [{ "node": "Extrair Dados", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extrair Dados": {
+      "main": [
+        [{ "node": "Ignorar?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ignorar?": {
+      "main": [
+        [{ "node": "Responder Ignorado", "type": "main", "index": 0 }],
+        [{ "node": "Buscar Contato", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Contato": {
+      "main": [
+        [{ "node": "Detectar Intenção", "type": "main", "index": 0 }]
+      ]
+    },
+    "Detectar Intenção": {
+      "main": [
+        [{ "node": "Switch Etapa", "type": "main", "index": 0 }]
+      ]
+    },
+    "Switch Etapa": {
+      "main": [
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }],
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }],
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }],
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }],
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }],
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }],
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }],
+        [{ "node": "Processar no Backend", "type": "main", "index": 0 }]
+      ]
+    },
+    "Processar no Backend": {
+      "main": [
+        [{ "node": "Registrar Histórico", "type": "main", "index": 0 }]
+      ]
+    },
+    "Registrar Histórico": {
+      "main": [
+        [{ "node": "Responder Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-04T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,78 @@
+{
+  "name": "🔄 Follow-Up Automático",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 1 }]
+        }
+      },
+      "name": "A cada 1 hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "id": "schedule-followup"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/pendentes-followup",
+        "options": {}
+      },
+      "name": "Buscar Pendentes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "id": "get-pendentes"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.total }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Tem pendentes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "id": "check-pendentes"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/followups",
+        "method": "POST",
+        "options": {}
+      },
+      "name": "Processar Follow-ups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 250],
+      "id": "process-followups"
+    },
+    {
+      "parameters": {},
+      "name": "Sem pendentes",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "id": "no-pendentes"
+    }
+  ],
+  "connections": {
+    "A cada 1 hora": { "main": [[{ "node": "Buscar Pendentes", "type": "main", "index": 0 }]] },
+    "Buscar Pendentes": { "main": [[{ "node": "Tem pendentes?", "type": "main", "index": 0 }]] },
+    "Tem pendentes?": {
+      "main": [
+        [{ "node": "Processar Follow-ups", "type": "main", "index": 0 }],
+        [{ "node": "Sem pendentes", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

@@ -1,0 +1,88 @@
+{
+  "name": "🔥 Alerta Leads Quentes",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 15 }]
+        }
+      },
+      "name": "A cada 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "id": "schedule-leads"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/leads-quentes",
+        "options": {}
+      },
+      "name": "Buscar Leads Quentes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "id": "get-leads"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.total }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Tem Leads?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "id": "check-leads"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/status",
+        "options": {}
+      },
+      "name": "Buscar Status Geral",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200],
+      "id": "get-status"
+    },
+    {
+      "parameters": {
+        "functionCode": "const leads = $('Buscar Leads Quentes').first().json.leads;\nconst status = $('Buscar Status Geral').first().json;\n\nlet texto = `🔥 *LEADS QUENTES - ${leads.length} novo(s)*\\n\\n`;\n\nfor (const lead of leads) {\n  texto += `👤 *${lead.contato?.nome || 'Sem nome'}*\\n`;\n  texto += `📱 ${lead.contato?.telefone || '-'}\\n`;\n  if (lead.interesse) texto += `💬 ${lead.interesse}\\n`;\n  texto += `📅 ${new Date(lead.criadoEm).toLocaleString('pt-BR')}\\n\\n`;\n}\n\ntexto += `📊 *Resumo do sistema:*\\n`;\ntexto += `• Contatos: ${status.contatos?.total || 0}\\n`;\ntexto += `• Enviados hoje: ${status.contatos?.enviadosHoje || 0}\\n`;\ntexto += `• WhatsApp: ${status.whatsapp?.conectado ? '✅' : '❌'}\\n`;\n\nreturn [{ json: { texto } }];"
+      },
+      "name": "Formatar Alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200],
+      "id": "format-alert"
+    },
+    {
+      "parameters": {},
+      "name": "Sem Leads",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "id": "no-leads"
+    }
+  ],
+  "connections": {
+    "A cada 15 min": { "main": [[{ "node": "Buscar Leads Quentes", "type": "main", "index": 0 }]] },
+    "Buscar Leads Quentes": { "main": [[{ "node": "Tem Leads?", "type": "main", "index": 0 }]] },
+    "Tem Leads?": {
+      "main": [
+        [{ "node": "Buscar Status Geral", "type": "main", "index": 0 }],
+        [{ "node": "Sem Leads", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Status Geral": { "main": [[{ "node": "Formatar Alerta", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}

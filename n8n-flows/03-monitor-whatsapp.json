@@ -1,0 +1,102 @@
+{
+  "name": "🔌 Monitor WhatsApp + Reset Diário",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+        }
+      },
+      "name": "A cada 5 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "id": "schedule-health"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/status",
+        "options": {}
+      },
+      "name": "Verificar Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "id": "check-status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.whatsapp.conectado }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "WhatsApp OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "id": "check-whatsapp"
+    },
+    {
+      "parameters": {},
+      "name": "Tudo OK",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [900, 200],
+      "id": "all-ok"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/configuracoes/whatsapp/conectar",
+        "method": "POST",
+        "options": {}
+      },
+      "name": "Tentar Reconectar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400],
+      "id": "try-reconnect"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 0 * * *" }]
+        }
+      },
+      "name": "Meia-noite",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 550],
+      "id": "schedule-reset"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/n8n/reset-diario",
+        "method": "POST",
+        "options": {}
+      },
+      "name": "Reset Diário",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 550],
+      "id": "daily-reset"
+    }
+  ],
+  "connections": {
+    "A cada 5 min": { "main": [[{ "node": "Verificar Status", "type": "main", "index": 0 }]] },
+    "Verificar Status": { "main": [[{ "node": "WhatsApp OK?", "type": "main", "index": 0 }]] },
+    "WhatsApp OK?": {
+      "main": [
+        [{ "node": "Tudo OK", "type": "main", "index": 0 }],
+        [{ "node": "Tentar Reconectar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Meia-noite": { "main": [[{ "node": "Reset Diário", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}
