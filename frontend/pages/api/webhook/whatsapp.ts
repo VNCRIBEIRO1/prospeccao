@@ -173,20 +173,58 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       where: { OR: [{ telefone }, { telefone: { endsWith: telefone.slice(-8) } }] },
     });
 
+    let isNovoContato = false;
+    const nomeWhatsApp = payload.sender?.pushname || payload.notifyName || payload.pushname || null;
+
     if (!contato) {
+      isNovoContato = true;
       contato = await prisma.contato.create({
-        data: { nome: 'Resposta Espontânea', telefone, status: 'respondeu', etapaBot: 'msg1' },
+        data: {
+          nome: nomeWhatsApp || 'Resposta Espontânea',
+          telefone,
+          status: 'respondeu',
+          etapaBot: 'msg1',
+        },
+      });
+      console.log(`[Webhook] 🆕 Novo contato criado: id=${contato.id} nome="${contato.nome}" tel=${telefone}`);
+    } else if (nomeWhatsApp && contato.nome === 'Resposta Espontânea') {
+      // Atualizar nome se tínhamos placeholder
+      await prisma.contato.update({ where: { id: contato.id }, data: { nome: nomeWhatsApp } });
+      contato = { ...contato, nome: nomeWhatsApp };
+    }
+
+    // ─── SAUDAÇÃO AUTOMÁTICA ───
+    // Se contato é novo (espontâneo) ou estava em 'inicio' (importado sem prospectar),
+    // ele NUNCA viu msg1 → enviar saudação primeiro e aguardar resposta
+    const precisaSaudacao = isNovoContato || contato.etapaBot === 'inicio';
+
+    if (precisaSaudacao) {
+      // Atualizar para msg1
+      await prisma.contato.update({
+        where: { id: contato.id },
+        data: { etapaBot: 'msg1', status: 'respondeu' },
+      });
+
+      // Registrar mensagem recebida
+      await prisma.mensagem.create({
+        data: { contatoId: contato.id, direcao: 'recebida', conteudo: texto.substring(0, 500), etapa: 'msg1' },
+      });
+
+      // Enviar saudação (msg1 com oferta + botões)
+      console.log(`[Webhook] 👋 Enviando saudação para ${telefone} (${isNovoContato ? 'novo contato' : 'etapa inicio'})`);
+      await enviarEtapaBot(contato.id, 'msg1');
+
+      return res.json({
+        status: 'saudacao_enviada',
+        contato: contato.id,
+        nome: contato.nome,
+        proximaEtapa: 'msg1',
+        motivo: isNovoContato ? 'contato_novo' : 'etapa_inicio',
       });
     }
 
-    // Normalizar etapaBot 'inicio' → 'msg1' (default do Prisma)
-    const etapaAtual = contato.etapaBot === 'inicio' ? 'msg1' : contato.etapaBot;
-    if (contato.etapaBot === 'inicio') {
-      await prisma.contato.update({
-        where: { id: contato.id },
-        data: { etapaBot: 'msg1' },
-      });
-    }
+    // Normalizar etapaBot para processamento normal
+    const etapaAtual = contato.etapaBot;
 
     // Registrar mensagem recebida
     await prisma.mensagem.create({

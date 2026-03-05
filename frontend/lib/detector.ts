@@ -15,8 +15,8 @@ export interface ResultadoDeteccao {
 
 const ETAPAS_TERMINAIS = ['msg3a', 'msg3c', 'msg2b_fim', 'atendimento_manual', 'bloqueado'];
 
-// Palavras que bloqueiam o bot imediatamente
-const REGEX_BLOQUEIO = /\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remover|cancelar|nao me mande|pare de|nao quero mais|me tire|me remove|stop)\b/;
+// Palavras/frases que bloqueiam o bot imediatamente
+const REGEX_BLOQUEIO = /\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remover|cancelar|stop|chega|nao insista)\b|nao me mande|pare de|para de me|nao quero mais|me tire|me remove|nao manda mais|nao mande mais|para com isso/;
 
 // Palavras-chave por intenção — POR ETAPA (corrige falsos positivos)
 // Cada etapa tem mapeamento específico: regex → número da opção
@@ -79,13 +79,22 @@ export function detectarResposta(
   // ════════════════════════════════════════
   // 1) BOTÃO NATIVO — Clicou em botão interativo WPPConnect
   //    O buttonId vem direto do payload (ex: "msg1_sim", "msg2_contratar")
+  //    VALIDAÇÃO: Só aceita se o botão pertence à etapa atual
   // ════════════════════════════════════════
   if (buttonId) {
-    // Tentar match direto no mapa de transições
     const transicao = TRANSICOES[buttonId];
     if (transicao) {
-      console.log(`[Detector] ✅ Botão nativo: ${buttonId} → ${transicao.proximaEtapa}`);
-      return { ...transicao, buttonId };
+      // Verificar se o botão pertence à etapa atual
+      const etapaFluxoAtual = FLUXO[etapaAtual];
+      const botaoPertence = etapaFluxoAtual?.botoes?.some(b => b.id === buttonId) ?? false;
+
+      if (botaoPertence) {
+        console.log(`[Detector] ✅ Botão nativo: ${buttonId} → ${transicao.proximaEtapa}`);
+        return { ...transicao, buttonId };
+      } else {
+        // Botão de OUTRA etapa — ignorar, tratar como texto livre
+        console.log(`[Detector] ⚠️ Botão "${buttonId}" não pertence à etapa ${etapaAtual} — ignorando`);
+      }
     }
 
     // Compatibilidade: buttonId legado (opt_1, opt_2, opt_3)
