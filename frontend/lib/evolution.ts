@@ -3,17 +3,26 @@
 // ============================================
 import axios from 'axios';
 
-const EVOLUTION_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY || '';
-const INSTANCE = process.env.EVOLUTION_INSTANCE || 'prospeccao';
+const EVOLUTION_URL = (process.env.EVOLUTION_API_URL || 'http://localhost:8080').trim().replace(/[\r\n]+/g, '');
+const EVOLUTION_KEY = (process.env.EVOLUTION_API_KEY || '').trim().replace(/[\r\n\t\x00-\x1F\x7F]+/g, '');
+const INSTANCE = (process.env.EVOLUTION_INSTANCE || 'prospeccao').trim().replace(/[\r\n]+/g, '');
+
+// Webhook URL: usa WEBHOOK_URL se definido (Vercel), senão monta a partir de host/porta
+const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 const BACKEND_HOST = process.env.BACKEND_HOST || 'host.docker.internal';
-const BACKEND_PORT = process.env.PORT || '3001';
+const BACKEND_PORT = process.env.WEBHOOK_PORT || process.env.PORT || '3000';
+
+// Debug: log sanitized values (sem expor a key completa)
+if (typeof process !== 'undefined' && process.env) {
+  const keyPreview = EVOLUTION_KEY ? `${EVOLUTION_KEY.substring(0, 4)}...${EVOLUTION_KEY.substring(EVOLUTION_KEY.length - 4)} (len=${EVOLUTION_KEY.length})` : 'EMPTY';
+  console.log(`[Evolution] URL=${EVOLUTION_URL} | KEY=${keyPreview} | INSTANCE=${INSTANCE}`);
+}
 
 const api = axios.create({
   baseURL: EVOLUTION_URL,
   headers: {
     'Content-Type': 'application/json',
-    apikey: EVOLUTION_KEY,
+    ...(EVOLUTION_KEY ? { apikey: EVOLUTION_KEY } : {}),
   },
   timeout: 30000,
 });
@@ -133,7 +142,9 @@ export async function iniciarConexao() {
     }
     limparQRCodeCache();
 
+    // 1) Verificar se instância existe
     let instanciaExiste = false;
+    let currentState = 'unknown';
     try {
       const instances = await api.get('/instance/fetchInstances');
       instanciaExiste = instances.data?.some(
@@ -141,18 +152,28 @@ export async function iniciarConexao() {
       );
     } catch {}
 
+    // 2) Se existe, verificar estado e LIMPAR se corrompida
     if (instanciaExiste) {
       try {
         const state = await api.get(`/instance/connectionState/${INSTANCE}`);
-        const currentState = state.data?.instance?.state || state.data?.state;
-        if (currentState === 'connecting') {
-          try { await api.delete(`/instance/logout/${INSTANCE}`); } catch {}
-          await new Promise((r) => setTimeout(r, 3000));
-        }
+        currentState = state.data?.instance?.state || state.data?.state || 'unknown';
+        console.log(`[Evolution] Estado atual da instância: ${currentState}`);
       } catch {}
+
+      // Se estado é close, connecting ou unknown -> deletar e recriar limpa
+      if (currentState !== 'open') {
+        console.log(`[Evolution] Instância em estado '${currentState}' — deletando para recriar limpa...`);
+        try { await api.delete(`/instance/logout/${INSTANCE}`); } catch {}
+        await new Promise((r) => setTimeout(r, 2000));
+        try { await api.delete(`/instance/delete/${INSTANCE}`); } catch {}
+        await new Promise((r) => setTimeout(r, 3000));
+        instanciaExiste = false;
+      }
     }
 
+    // 3) Criar instância nova (limpa)
     if (!instanciaExiste) {
+      console.log('[Evolution] Criando instância nova...');
       try {
         const createResponse = await api.post('/instance/create', {
           instanceName: INSTANCE,
@@ -160,24 +181,35 @@ export async function iniciarConexao() {
           integration: 'WHATSAPP-BAILEYS',
         });
         const qrFromCreate = createResponse.data?.qrcode?.base64 || createResponse.data?.base64;
-        if (qrFromCreate && qrFromCreate.length > 20) {
+        if (qrFromCreate && typeof qrFromCreate === 'string' && qrFromCreate.length > 50) {
           armazenarQRCode({ base64: qrFromCreate });
+          console.log('[Evolution] QR Code recebido na criação da instância');
         }
         await new Promise((r) => setTimeout(r, 2000));
       } catch (e: any) {
         if (e.response?.status !== 403) {
-          console.error('Erro ao criar instância', e.message);
+          console.error('[Evolution] Erro ao criar instância:', e.message);
         }
       }
     }
 
-    await autoConfigurarWebhook();
+    // 4) Configurar webhook ANTES de conectar
+    const whResult = await autoConfigurarWebhook();
+    console.log(`[Evolution] Webhook configurado: ${whResult.sucesso ? whResult.url : whResult.erro}`);
     await new Promise((r) => setTimeout(r, 1000));
 
+    // 5) Conectar (gera QR Code)
     try {
       const response = await api.get(`/instance/connect/${INSTANCE}`);
+      const base64QR = response.data?.base64;
       const pairingCode = response.data?.pairingCode;
       const code = response.data?.code;
+
+      // Armazenar QR Code retornado diretamente pelo connect
+      if (base64QR && typeof base64QR === 'string' && base64QR.length > 50) {
+        armazenarQRCode({ base64: base64QR, pairingCode, code });
+        console.log('[Evolution] QR Code recebido via connect endpoint');
+      }
       if (pairingCode) {
         qrCodeCache.pairingCode = pairingCode;
         qrCodeCache.code = code;
@@ -187,10 +219,12 @@ export async function iniciarConexao() {
         sucesso: true,
         conectado: false,
         pairingCode: pairingCode || null,
+        qrCode: base64QR || null,
         aguardandoQR: true,
-        mensagem: 'Conexão iniciada. QR Code será gerado em instantes via webhook...',
+        mensagem: 'Conexão iniciada. QR Code será gerado em instantes...',
       };
     } catch (e: any) {
+      console.error('[Evolution] Erro ao conectar:', e.message);
       return { sucesso: false, erro: e.message };
     }
   } catch (error: any) {
@@ -217,7 +251,11 @@ export async function configurarWebhook(webhookUrl?: string) {
 }
 
 export async function autoConfigurarWebhook() {
-  const webhookUrl = `http://${BACKEND_HOST}:${BACKEND_PORT}/api/webhook/whatsapp`;
+  // Prioridade: WEBHOOK_URL (Vercel) > montagem manual (local)
+  const webhookUrl = WEBHOOK_URL
+    ? `${WEBHOOK_URL}/api/webhook/whatsapp`
+    : `http://${BACKEND_HOST}:${BACKEND_PORT}/api/webhook/whatsapp`;
+  console.log(`[Evolution] autoConfigurarWebhook URL: ${webhookUrl}`);
   return await configurarWebhook(webhookUrl);
 }
 
@@ -233,12 +271,14 @@ export async function desconectar() {
 
 export async function reiniciarInstancia() {
   try {
+    console.log('[Evolution] Reiniciando instância — logout + delete...');
     try { await api.delete(`/instance/logout/${INSTANCE}`); } catch {}
     await new Promise((r) => setTimeout(r, 2000));
     try { await api.delete(`/instance/delete/${INSTANCE}`); } catch {}
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 3000));
     limparQRCodeCache();
-    return { sucesso: true };
+    console.log('[Evolution] Instância deletada. Pronta para recriar.');
+    return { sucesso: true, mensagem: 'Instância reiniciada. Clique em Conectar para gerar novo QR.' };
   } catch (error: any) {
     return { sucesso: false, erro: error.message };
   }
