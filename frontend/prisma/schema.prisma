@@ -1,0 +1,79 @@
+// ============================================
+// Prisma Schema — Banco de Dados PostgreSQL (Neon)
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Contato {
+  id            Int        @id @default(autoincrement())
+  nome          String
+  telefone      String     @unique
+  escritorio    String?
+  cidade        String?
+  areaAtuacao   String?
+  status        String     @default("pendente")
+  etapaBot      String     @default("inicio")
+  tentativasSemResposta Int @default(0)
+  ultimoEnvio   DateTime?
+  criadoEm      DateTime   @default(now())
+  atualizadoEm  DateTime   @updatedAt
+
+  mensagens     Mensagem[]
+  leads         Lead[]
+}
+
+model Campanha {
+  id            Int      @id @default(autoincrement())
+  nome          String
+  status        String   @default("pausada")
+  delaySegundos Int      @default(60)
+  limiteDiario  Int      @default(50)
+  totalEnviado  Int      @default(0)
+  enviadosHoje  Int      @default(0)
+  ultimoReset   DateTime @default(now())
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+}
+
+model Lead {
+  id         Int      @id @default(autoincrement())
+  contatoId  Int
+  estagio    String   @default("novo")
+  notas      String?
+  criadoEm   DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  contato    Contato  @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+}
+
+model Mensagem {
+  id         Int      @id @default(autoincrement())
+  contatoId  Int
+  direcao    String
+  conteudo   String
+  etapa      String?
+  criadoEm   DateTime @default(now())
+
+  contato    Contato  @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+}
+
+model Configuracao {
+  id    Int    @id @default(autoincrement())
+  chave String @unique
+  valor String
+}
+
+model LogErro {
+  id        Int      @id @default(autoincrement())
+  tipo      String
+  mensagem  String
+  detalhes  String?
+  criadoEm  DateTime @default(now())
+}
