@@ -117,56 +117,64 @@ export async function enviarMensagemComBotoes(
 ) {
   const numero = formatarTelefone(telefone);
 
-  // WPPConnect suporta botões nativos! 🎉
-  if (botoes && botoes.length > 0 && botoes.length <= 3) {
+  // Sem botões → texto puro
+  if (!botoes || botoes.length === 0) {
+    return await enviarMensagem(telefone, texto);
+  }
+
+  // ═══ 1) PRIMARY: Lista interativa (send-buttons é DEPRECATED no WPPConnect) ═══
+  try {
+    const api = await getApi();
+    const response = await api.post('/send-list-message', {
+      phone: numero,
+      description: texto.length > 1024 ? texto.substring(0, 1020) + '...' : texto,
+      buttonText: '📋 Ver opções',
+      sections: [
+        {
+          title: 'Escolha uma opção',
+          rows: botoes.map((b) => ({
+            title: b.texto,
+            description: b.descricao || '',
+            rowId: b.id,
+          })),
+        },
+      ],
+    });
+    console.log(`[WPPConnect] ✅ Lista interativa enviada para ${numero}`);
+    return { sucesso: true, data: response.data, tipo: 'lista' };
+  } catch (listErr: any) {
+    console.log(`[WPPConnect] Lista falhou (${listErr.message}), tentando botões nativos...`);
+  }
+
+  // ═══ 2) SECONDARY: Botões nativos (deprecated, pode funcionar em algumas versões) ═══
+  if (botoes.length <= 3) {
     try {
       const api = await getApi();
       const buttons = botoes.map((b) => ({
         id: b.id,
         text: b.texto,
       }));
-
       const response = await api.post('/send-buttons', {
         phone: numero,
         message: texto.length > 1024 ? texto.substring(0, 1020) + '...' : texto,
         footer: rodape || 'Toque em uma opção 👆',
         buttons,
       });
-      console.log(`[WPPConnect] ✅ Botões enviados para ${numero}`);
+      console.log(`[WPPConnect] ✅ Botões nativos enviados para ${numero}`);
       return { sucesso: true, data: response.data, tipo: 'botoes' };
     } catch (btnErr: any) {
-      console.log(`[WPPConnect] Botões falharam (${btnErr.message}), tentando lista...`);
+      console.log(`[WPPConnect] Botões falharam (${btnErr.message}), usando texto numerado...`);
     }
   }
 
-  // Fallback: lista interativa (mais de 3 opções)
-  if (botoes && botoes.length > 3) {
-    try {
-      const api = await getApi();
-      const response = await api.post('/send-list-message', {
-        phone: numero,
-        description: texto.length > 1024 ? texto.substring(0, 1020) + '...' : texto,
-        buttonText: '📋 Ver opções',
-        sections: [
-          {
-            title: 'Opções disponíveis',
-            rows: botoes.map((b) => ({
-              title: b.texto,
-              description: b.descricao || '',
-              rowId: b.id,
-            })),
-          },
-        ],
-      });
-      console.log(`[WPPConnect] ✅ Lista enviada para ${numero}`);
-      return { sucesso: true, data: response.data, tipo: 'lista' };
-    } catch (listErr: any) {
-      console.log(`[WPPConnect] Lista falhou (${listErr.message}), enviando texto...`);
-    }
-  }
-
-  // Fallback final: texto puro
-  return await enviarMensagem(telefone, texto);
+  // ═══ 3) FALLBACK: Texto com opções numeradas ═══
+  const emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+  const opcoesNumeradas = botoes
+    .map((b, i) => `${emojis[i] || `${i + 1}.`} ${b.texto}`)
+    .join('\n');
+  const textoComOpcoes = `${texto}\n\n${opcoesNumeradas}\n\n_Responda com o número da opção desejada_`;
+  console.log(`[WPPConnect] 📝 Enviando texto com opções numeradas para ${numero}`);
+  return await enviarMensagem(telefone, textoComOpcoes);
 }
 
 export async function verificarConexao() {

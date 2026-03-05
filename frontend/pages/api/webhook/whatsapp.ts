@@ -179,19 +179,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    // Normalizar etapaBot 'inicio' → 'msg1' (default do Prisma)
+    const etapaAtual = contato.etapaBot === 'inicio' ? 'msg1' : contato.etapaBot;
+    if (contato.etapaBot === 'inicio') {
+      await prisma.contato.update({
+        where: { id: contato.id },
+        data: { etapaBot: 'msg1' },
+      });
+    }
+
     // Registrar mensagem recebida
     await prisma.mensagem.create({
-      data: { contatoId: contato.id, direcao: 'recebida', conteudo: texto.substring(0, 500), etapa: contato.etapaBot },
+      data: { contatoId: contato.id, direcao: 'recebida', conteudo: texto.substring(0, 500), etapa: etapaAtual },
     });
 
     // ─── DETECTAR RESPOSTA ───
-    const resultado = detectarResposta(texto, contato.etapaBot, buttonId);
+    const resultado = detectarResposta(texto, etapaAtual, buttonId);
 
-    console.log(`[Webhook] 🎯 Detecção: etapa=${contato.etapaBot} → ação=${resultado.acao} → próxima=${resultado.proximaEtapa} | btn=${resultado.buttonId || 'nenhum'}`);
+    console.log(`[Webhook] 🎯 Detecção: etapa=${etapaAtual} → ação=${resultado.acao} → próxima=${resultado.proximaEtapa} | btn=${resultado.buttonId || 'nenhum'}`);
 
     // ─── AÇÃO: Manual (etapa terminal) ───
     if (!resultado.proximaEtapa || resultado.acao === 'manual') {
-      return res.json({ status: 'manual', contato: contato.id, etapaAtual: contato.etapaBot });
+      return res.json({ status: 'manual', contato: contato.id, etapaAtual });
     }
 
     // ─── AÇÃO: Bloquear ───
@@ -205,7 +214,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // ─── AÇÃO: Reenviar opções (resposta não reconhecida) ───
     if (resultado.acao === 'reenviar_opcoes') {
-      const fallback = gerarFallback(contato.etapaBot);
+      const fallback = gerarFallback(etapaAtual);
       if (fallback.botoes) {
         // Reenviar com botões interativos nativos
         await enviarMensagemComBotoes(
@@ -216,17 +225,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         );
       } else {
         // Sem botões disponíveis, enviar texto
-        const msgInvalida = gerarMensagemOpcaoInvalida(contato.etapaBot);
+        const msgInvalida = gerarMensagemOpcaoInvalida(etapaAtual);
         if (msgInvalida) {
           await enviarMensagem(contato.telefone, msgInvalida);
         }
       }
 
       await prisma.mensagem.create({
-        data: { contatoId: contato.id, direcao: 'enviada', conteudo: '[Fallback - botões reenviados]', etapa: contato.etapaBot },
+        data: { contatoId: contato.id, direcao: 'enviada', conteudo: '[Fallback - botões reenviados]', etapa: etapaAtual },
       });
 
-      return res.json({ status: 'opcao_invalida', contato: contato.id, etapaAtual: contato.etapaBot });
+      return res.json({ status: 'opcao_invalida', contato: contato.id, etapaAtual });
     }
 
     // ─── AVANÇAR FLUXO ───
@@ -269,7 +278,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.json({
       status: 'processado',
       contato: contato.id,
-      etapaAnterior: contato.etapaBot,
+      etapaAnterior: etapaAtual,
       proximaEtapa: resultado.proximaEtapa,
       acao: resultado.acao,
       buttonId: resultado.buttonId || null,

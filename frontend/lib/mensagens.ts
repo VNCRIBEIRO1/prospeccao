@@ -30,6 +30,32 @@ export interface BotaoInterativo {
 export const FLUXO: Record<string, EtapaFluxo> = {
 
   // ─────────────────────────────────────────
+  // INICIO — Alias de msg1 (default do Prisma)
+  // Contatos novos têm etapaBot='inicio'
+  // ─────────────────────────────────────────
+  inicio: {
+    textos: [
+      `Olá! 👋 Tudo bem?
+
+Você sabia que escritórios de advocacia com site profissional recebem até *3x mais contatos* de clientes novos?
+
+🖥️ Criamos sites premium para advogados com:
+✅ Chatbot que atende e capta clientes 24h
+✅ Blog jurídico com artigos da sua área
+✅ Domínio .adv.br já incluso
+✅ Suporte e garantia incluídos
+
+Tudo isso por apenas *R$ 299/ano* 👇`,
+    ],
+    botoes: [
+      { id: 'msg1_sim', texto: '✅ Quero conhecer' },
+      { id: 'msg1_site', texto: '🌐 Já tenho site' },
+      { id: 'msg1_nao', texto: '⏳ Agora não' },
+    ],
+    rodape: 'Toque em uma opção acima 👆',
+  },
+
+  // ─────────────────────────────────────────
   // MSG1 — Saudação inicial (prospecção fria)
   // ─────────────────────────────────────────
   msg1: {
