@@ -23,13 +23,13 @@ const REGEX_BLOQUEIO = /\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remo
 const SEMANTICA_POR_ETAPA: Record<string, Array<{ regex: RegExp; opcao: number }>> = {
   // inicio: alias de msg1 (default do Prisma)
   inicio: [
-    { regex: /\b(sim|quero|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado|como funciona|me conta|fala mais|saber mais|explica|informacoes)\b/, opcao: 1 },
+    { regex: /\b(sim|quero|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado|como funciona|me conta|fala mais|saber mais|explica|informacoes|oi|ola|bom dia|boa tarde|boa noite|eai|fala|salve|hey|hello|opa|oie|oii|e ai)\b/, opcao: 1 },
     { regex: /\b(tenho site|ja tenho|meu site|nosso site|temos site)\b/, opcao: 2 },
     { regex: /\b(agora nao|nao|depois|talvez|mais tarde|nao quero|obrigado|valeu|sem interesse|nao preciso|vou pensar|nao agora)\b/, opcao: 3 },
   ],
   // msg1: 1=Quero conhecer, 2=Já tenho site, 3=Agora não
   msg1: [
-    { regex: /\b(sim|quero|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado|como funciona|me conta|fala mais|saber mais|explica|informacoes)\b/, opcao: 1 },
+    { regex: /\b(sim|quero|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado|como funciona|me conta|fala mais|saber mais|explica|informacoes|oi|ola|bom dia|boa tarde|boa noite|eai|fala|salve|hey|hello|opa|oie|oii|e ai)\b/, opcao: 1 },
     { regex: /\b(tenho site|ja tenho|meu site|nosso site|temos site)\b/, opcao: 2 },
     { regex: /\b(agora nao|nao|depois|talvez|mais tarde|nao quero|obrigado|valeu|sem interesse|nao preciso|vou pensar|nao agora)\b/, opcao: 3 },
   ],

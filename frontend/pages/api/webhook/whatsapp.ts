@@ -12,6 +12,66 @@ import type { EtapaFluxo, BotaoInterativo } from '../../../lib/mensagens';
 import axios from 'axios';
 
 // ============================================
+// DEDUPLICAÇÃO DUPLA CAMADA
+// WPPConnect dispara onMessage + onAnyMessage para CADA msg,
+// e para list_response/buttons_response pode disparar MÚLTIPLAS
+// vezes com IDs diferentes. Usamos 2 caches:
+//   1) messageId (_serialized) — dedup padrão
+//   2) contentKey (tel+buttonId+texto) — dedup por conteúdo
+// ============================================
+const processedMessages = new Map<string, number>();
+const processedContent = new Map<string, number>();
+const processedRawButtons = new Map<string, number>();
+const DEDUP_TTL_MS = 30_000; // 30 segundos
+const DEDUP_CONTENT_TTL_MS = 10_000; // 10 segundos para dedup por conteúdo
+
+function cleanupMap(map: Map<string, number>, ttl: number) {
+  if (map.size > 100) {
+    const now = Date.now();
+    for (const [key, ts] of map) {
+      if (now - ts > ttl) map.delete(key);
+    }
+  }
+}
+
+function isDuplicate(messageId: string): boolean {
+  if (!messageId) return false;
+  cleanupMap(processedMessages, DEDUP_TTL_MS);
+  if (processedMessages.has(messageId)) {
+    return true;
+  }
+  processedMessages.set(messageId, Date.now());
+  return false;
+}
+
+/** Dedup pré-LID: usa telefone RAW (pode ser LID) + buttonId.
+ *  Pega duplicatas ANTES do mapeamento LID — impede que o segundo
+ *  webhook mapeie para contato errado via estratégia 2.
+ */
+function isRawButtonDuplicate(rawTelefone: string, buttonId: string): boolean {
+  const key = `raw:${rawTelefone}|${buttonId}`;
+  cleanupMap(processedRawButtons, DEDUP_CONTENT_TTL_MS);
+  if (processedRawButtons.has(key)) {
+    return true;
+  }
+  processedRawButtons.set(key, Date.now());
+  return false;
+}
+
+/** Dedup por conteúdo (após mapeamento LID + busca contato).
+ *  Para texto livre: usa telefone + etapa + texto
+ */
+function isContentDuplicate(telefone: string, etapa: string, texto: string): boolean {
+  const key = `txt:${telefone}|${etapa}|${texto.substring(0, 30).toLowerCase()}`;
+  cleanupMap(processedContent, DEDUP_CONTENT_TTL_MS);
+  if (processedContent.has(key)) {
+    return true;
+  }
+  processedContent.set(key, Date.now());
+  return false;
+}
+
+// ============================================
 // ENVIAR ETAPA COMPLETA — Multi-mensagem + botões
 // ============================================
 async function enviarEtapaBot(contatoId: number, etapa: string): Promise<{ sucesso: boolean; erro?: string }> {
@@ -107,10 +167,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.json({ status: 'qrcode_armazenado' });
     }
 
+    // ─── DEDUPLICAÇÃO — Ignorar mensagens já processadas ───
+    const messageId = payload.id?._serialized || payload.id?.id || payload.id || payload.messageId || '';
+    if (messageId && isDuplicate(messageId)) {
+      return res.json({ status: 'ignorado', motivo: 'duplicado', messageId });
+    }
+
     // ─── Extrair dados da mensagem ───
     let telefone = '';
     let texto = '';
     let buttonId: string | null = null;
+    let isLidNumber = false; // Flag para números LID (Linked Identity)
 
     if (payload.from || payload.chatId || payload.event === 'onMessage') {
       const from = payload.from || payload.chatId || '';
@@ -125,8 +192,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.json({ status: 'ignorado', motivo: 'mensagem_propria' });
       }
 
-      // Telefone
-      telefone = from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+      // Detectar se é número LID (Linked Identity Device)
+      isLidNumber = from.endsWith('@lid') || from.includes('@lid');
+
+      // Telefone — limpar sufixos WPP (@c.us, @s.whatsapp.net, @lid)
+      telefone = from.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@lid', '');
 
       // Texto
       texto = payload.body || payload.content || payload.caption || '';
@@ -168,10 +238,94 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.json({ status: 'ignorado', motivo: 'telefone_invalido' });
     }
 
+    // ─── DEDUP PRÉ-LID — Para botões/listas, bloquear duplicatas ANTES do mapeamento ───
+    // WPPConnect dispara onMessage + onAnyMessage com IDs diferentes para a mesma resposta.
+    // Se não bloquearmos aqui, o segundo webhook pode mapear via estratégia 2 para contato errado.
+    if (buttonId && isRawButtonDuplicate(telefone, buttonId)) {
+      console.log(`[Webhook] 🔄 Duplicado pré-LID: tel=${telefone} btn=${buttonId} — ignorando`);
+      return res.json({ status: 'ignorado', motivo: 'duplicado_botao' });
+    }
+
     // ─── Buscar ou criar contato ───
+    // WPPConnect pode enviar números em formato LID (Linked Identity Device)
+    // Ex: "16076784038000" em vez de "5518996311933"
+    // Precisamos buscar de múltiplas formas:
     let contato = await prisma.contato.findFirst({
       where: { OR: [{ telefone }, { telefone: { endsWith: telefone.slice(-8) } }] },
     });
+
+    // Se não encontrou e é LID, mapear para o contato real
+    // LID é um identificador interno do WhatsApp — NÃO é o número real
+    if (!contato && isLidNumber) {
+      console.log(`[Webhook] 🔄 Número LID detectado: ${telefone} — buscando contato real...`);
+
+      // Estratégia 1: Extrair número real de campos do payload
+      const candidatos = [
+        payload.sender?.id?.replace(/@(c\.us|lid|s\.whatsapp\.net)$/g, ''),
+        payload.chat?.contact?.id?.replace(/@(c\.us|lid|s\.whatsapp\.net)$/g, ''),
+        payload.chatId?.replace(/@(c\.us|lid|s\.whatsapp\.net)$/g, ''),
+      ].filter(n => n && /^\d{10,15}$/.test(n) && n !== telefone);
+
+      for (const candidato of candidatos) {
+        contato = await prisma.contato.findFirst({
+          where: { OR: [{ telefone: candidato! }, { telefone: { endsWith: candidato!.slice(-8) } }] },
+        });
+        if (contato) {
+          telefone = contato.telefone;
+          console.log(`[Webhook] 🔄 LID mapeado via payload → contato ${contato.id} (${contato.telefone})`);
+          break;
+        }
+      }
+
+      // Estratégia 2: Se tem buttonId, buscar contato na etapa correspondente
+      // SEGURANÇA: Só aceita se o contato foi atualizado nos últimos 60 segundos
+      // (evita mapear para contato errado quando há muitos contatos na mesma etapa)
+      if (!contato && buttonId) {
+        const etapasComBotao: string[] = [];
+        for (const [etapa, fluxo] of Object.entries(FLUXO)) {
+          if (fluxo.botoes?.some(b => b.id === buttonId)) {
+            etapasComBotao.push(etapa);
+          }
+        }
+        if (etapasComBotao.length > 0) {
+          const limiteRecente = new Date(Date.now() - 60_000); // últimos 60 segundos
+          contato = await prisma.contato.findFirst({
+            where: {
+              etapaBot: { in: etapasComBotao },
+              status: { not: 'naoInteresse' },
+              atualizadoEm: { gte: limiteRecente },
+            },
+            orderBy: { atualizadoEm: 'desc' },
+          });
+          if (contato) {
+            telefone = contato.telefone;
+            console.log(`[Webhook] 🔄 LID mapeado via buttonId "${buttonId}" → contato ${contato.id} (${contato.telefone}) na etapa ${contato.etapaBot}`);
+          }
+        }
+      }
+
+      // Estratégia 3: Último contato que recebeu mensagem enviada recentemente
+      if (!contato) {
+        const ultimaMsgEnviada = await prisma.mensagem.findFirst({
+          where: { direcao: 'enviada' },
+          orderBy: { criadoEm: 'desc' },
+          include: { contato: true },
+        });
+        if (ultimaMsgEnviada?.contato && ultimaMsgEnviada.criadoEm) {
+          const diffMs = Date.now() - new Date(ultimaMsgEnviada.criadoEm).getTime();
+          if (diffMs < 5 * 60 * 1000) {
+            contato = ultimaMsgEnviada.contato;
+            telefone = contato.telefone;
+            console.log(`[Webhook] 🔄 LID mapeado por última msg enviada → contato ${contato.id} (${contato.telefone})`);
+          }
+        }
+      }
+
+      if (!contato) {
+        console.log(`[Webhook] ⚠️ Número LID ${payload.from} não mapeado — ignorando`);
+        return res.json({ status: 'ignorado', motivo: 'lid_nao_mapeado', from: payload.from });
+      }
+    }
 
     let isNovoContato = false;
     const nomeWhatsApp = payload.sender?.pushname || payload.notifyName || payload.pushname || null;
@@ -225,6 +379,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Normalizar etapaBot para processamento normal
     const etapaAtual = contato.etapaBot;
+
+    // ─── DEDUP CONTEÚDO — Para texto livre (botões já foram filtrados pelo dedup pré-LID) ───
+    if (!buttonId && isContentDuplicate(telefone, etapaAtual, texto)) {
+      console.log(`[Webhook] 🔄 Duplicado texto: tel=${telefone} etapa=${etapaAtual} — ignorando`);
+      return res.json({ status: 'ignorado', motivo: 'duplicado_conteudo' });
+    }
 
     // Registrar mensagem recebida
     await prisma.mensagem.create({
