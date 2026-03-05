@@ -46,11 +46,14 @@ router.post('/', async (req, res) => {
 router.get('/templates', async (req, res) => {
   try {
     const MENSAGENS = require('../services/mensagens');
-    const templates = Object.entries(MENSAGENS).map(([key, value]) => ({
+    const { FLUXO, BOTOES } = require('../services/mensagens');
+    const templates = Object.entries(FLUXO).map(([key, fluxo]) => ({
       id: key,
       nome: key.replace(/_/g, ' ').replace(/msg/g, 'Mensagem ').trim(),
-      conteudo: value,
-      preview: value.substring(0, 120) + '...'
+      conteudo: fluxo.textos.join('\n\n'),
+      preview: fluxo.textos[0].substring(0, 120) + '...',
+      botoes: fluxo.botoes || [],
+      terminal: fluxo.terminal || false
     }));
     res.json(templates);
   } catch (error) {

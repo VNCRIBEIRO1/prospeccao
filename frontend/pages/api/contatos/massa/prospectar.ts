@@ -1,8 +1,8 @@
-// POST /api/contatos/massa/prospectar — Dispara msg1 para contatos selecionados com delay
+// POST /api/contatos/massa/prospectar — Dispara msg1 (com botões) para contatos selecionados
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../../lib/prisma';
-import { enviarMensagem } from '../../../../lib/evolution';
-import { MENSAGENS } from '../../../../lib/mensagens';
+import { enviarMensagem, enviarMensagemComBotoes } from '../../../../lib/evolution';
+import { FLUXO } from '../../../../lib/mensagens';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -23,7 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.json({ mensagem: 'Nenhum contato encontrado', enviados: 0, falhas: 0 });
     }
 
-    const mensagem = MENSAGENS['msg1'];
+    const fluxoMsg1 = FLUXO['msg1'];
     let enviados = 0;
     let falhas = 0;
     const resultados: { id: number; nome: string; telefone: string; sucesso: boolean; erro?: string }[] = [];
@@ -32,7 +32,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const contato = contatos[i];
 
       try {
-        const resultado = await enviarMensagem(contato.telefone, mensagem);
+        // Enviar TODAS as mensagens da etapa msg1 (textos + botões)
+        let resultado: any = { sucesso: true };
+        const textos = fluxoMsg1.textos;
+        const botoes = fluxoMsg1.botoes;
+
+        for (let j = 0; j < textos.length; j++) {
+          const isUltimo = j === textos.length - 1;
+          if (isUltimo && botoes && botoes.length > 0) {
+            resultado = await enviarMensagemComBotoes(contato.telefone, textos[j], botoes, fluxoMsg1.rodape || 'Toque em uma opção 👆');
+          } else {
+            resultado = await enviarMensagem(contato.telefone, textos[j]);
+          }
+          if (!resultado.sucesso) break;
+          if (!isUltimo) await new Promise(r => setTimeout(r, 1500));
+        }
 
         if (resultado.sucesso) {
           await prisma.contato.update({
@@ -44,11 +58,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               tentativasSemResposta: { increment: 1 },
             },
           });
+          const conteudoResumo = fluxoMsg1.textos.map(t => t.substring(0, 200)).join(' | ');
           await prisma.mensagem.create({
             data: {
               contatoId: contato.id,
               direcao: 'enviada',
-              conteudo: mensagem.substring(0, 500),
+              conteudo: conteudoResumo.substring(0, 500),
               etapa: 'msg1',
             },
           });

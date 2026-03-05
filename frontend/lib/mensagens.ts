@@ -1,226 +1,347 @@
 // ============================================
 // Mensagens do Bot — Templates centralizados
+// REESTRUTURADO: Todas as etapas usam botões nativos WPPConnect
+// Mensagens longas divididas: conteúdo + menu separado
 // ============================================
 
-export const MENSAGENS: Record<string, string> = {
-  msg1: `Olá! 👋 Tudo bem?
+// ============================================
+// TIPO: Definição de etapa do fluxo
+// ============================================
+export interface EtapaFluxo {
+  /** Textos a enviar (se múltiplos, envia em sequência com delay) */
+  textos: string[];
+  /** Botões interativos para esta etapa (null = etapa terminal sem menu) */
+  botoes: BotaoInterativo[] | null;
+  /** Texto do rodapé dos botões */
+  rodape?: string;
+  /** Se true, esta é uma etapa terminal (sem continuidade automática) */
+  terminal?: boolean;
+}
 
-Você sabia que escritórios de advocacia com site profissional recebem até 3x mais contatos de clientes novos?
+export interface BotaoInterativo {
+  id: string;
+  texto: string;
+  descricao?: string;
+}
+
+// ============================================
+// FLUXO COMPLETO — Cada etapa com conteúdo + botões
+// ============================================
+export const FLUXO: Record<string, EtapaFluxo> = {
+
+  // ─────────────────────────────────────────
+  // MSG1 — Saudação inicial (prospecção fria)
+  // ─────────────────────────────────────────
+  msg1: {
+    textos: [
+      `Olá! 👋 Tudo bem?
+
+Você sabia que escritórios de advocacia com site profissional recebem até *3x mais contatos* de clientes novos?
 
 🖥️ Criamos sites premium para advogados com:
 ✅ Chatbot que atende e capta clientes 24h
 ✅ Blog jurídico com artigos da sua área
-✅ Domínio .com.br ou .adv.br já incluso
-✅ Suporte e garantia de funcionamento incluídos
+✅ Domínio .adv.br já incluso
+✅ Suporte e garantia incluídos
 
-Tudo isso por apenas R$ 299/ano 👇
+Tudo isso por apenas *R$ 299/ano* 👇`,
+    ],
+    botoes: [
+      { id: 'msg1_sim', texto: '✅ Quero conhecer' },
+      { id: 'msg1_site', texto: '🌐 Já tenho site' },
+      { id: 'msg1_nao', texto: '⏳ Agora não' },
+    ],
+    rodape: 'Toque em uma opção acima 👆',
+  },
 
-1️⃣ Sim! Quero conhecer
-2️⃣ Já tenho site
-3️⃣ Agora não`,
+  // ─────────────────────────────────────────
+  // MSG2 — Portfólio + proposta
+  // Dividida: texto detalhado → menu com botões
+  // ─────────────────────────────────────────
+  msg2: {
+    textos: [
+      `Perfeito! 🎉
 
-  msg2: `Perfeito! 🎉
-
-Aqui está um site que entregamos recentemente para um escritório de advocacia em SP 👇
+Aqui está um site que entregamos para um escritório de SP 👇
 
 🔗 https://cerbeleraeoliveiraadv.vercel.app/
 
-Veja o que está incluso e como funciona na prática:
+Veja o que está *incluso*:
 
-🤖 *Chatbot Inteligente*
-Fica visível no site 24h por dia. Quando um cliente entra fora do horário comercial, o chatbot inicia a conversa, pergunta qual é o problema jurídico, coleta nome e WhatsApp da pessoa e te envia o contato direto. Você acorda com leads novos sem ter feito nada.
+🤖 *Chatbot Inteligente* — Fica no site 24h. Quando um cliente entra, o chatbot inicia a conversa, coleta nome e WhatsApp e te envia o contato direto.
 
-📝 *Blog Jurídico Personalizado*
-Criamos artigos sobre exatamente o que os seus clientes pesquisam no Google. Se vocês atuam em Direito Trabalhista, publicamos textos como "Fui demitido sem justa causa, o que tenho direito?" ou "Como calcular minha rescisão?" — isso faz o site aparecer pra quem está com problema e procurando um advogado agora.
+📝 *Blog Jurídico* — Artigos sobre o que seus clientes pesquisam no Google. Atrai visitas orgânicas sem pagar anúncio.
 
-🔍 *SEO Local*
-Otimizamos o site pra aparecer quando alguém buscar "advogado trabalhista em [sua cidade]" ou "advogado criminal perto de mim".
+🔍 *SEO Local* — Site otimizado para buscas como "advogado trabalhista em [sua cidade]".
 
-📱 *Design Responsivo*
-Funciona perfeitamente no celular, tablet e computador — mais de 80% dos acessos hoje são pelo celular.
+📱 *Design Responsivo* — Funciona no celular, tablet e PC.
 
-🔗 *Domínio Profissional Incluso*
-Caso vocês ainda não tenham um domínio, já registramos o .com.br ou .adv.br do escritório sem custo extra. Está tudo dentro dos R$ 299/ano.
+🔗 *Domínio .adv.br incluso* — Registrado no nome do escritório.
 
-🛡️ *Infraestrutura Robusta*
-O site aguenta até 100.000 visitantes por mês sem travar ou cair. Pra ter ideia, um escritório de advocacia local dificilmente chega a 1% disso — vocês têm folga absurda de capacidade.
+🛡️ *Infraestrutura robusta* — Aguenta 100.000 acessos/mês sem travar.
 
-🛠️ *Suporte e Garantia Inclusos*
-Monitoramos o site e garantimos que ele esteja sempre online e funcionando corretamente. Qualquer ajuste ou problema, é só nos chamar.
+🛠️ *Suporte e garantia inclusos*.`,
 
-Tudo personalizado com logo, cores, nome dos sócios e áreas de atuação de vocês.
-Entrega em 1 a 3 dias úteis por apenas *R$ 299/ano*
+      `Tudo personalizado com logo, cores, nome dos sócios e áreas de atuação.
 
-1️⃣ Quero contratar!
-2️⃣ Tenho dúvidas
-3️⃣ Vou pensar...`,
+⚡ Entrega em *1 a 3 dias úteis* por apenas *R$ 299/ano*
 
-  msg2b: `Que ótimo que já se preocupam com presença online! 👏
+O que acha? 👇`,
+    ],
+    botoes: [
+      { id: 'msg2_contratar', texto: '🔥 Quero contratar!' },
+      { id: 'msg2_duvidas', texto: '❓ Tenho dúvidas' },
+      { id: 'msg2_pensar', texto: '🤔 Vou pensar...' },
+    ],
+    rodape: 'Escolha uma opção 👆',
+  },
+
+  // ─────────────────────────────────────────
+  // MSG2B — Qualificação (já tem site)
+  // ─────────────────────────────────────────
+  msg2b: {
+    textos: [
+      `Que ótimo que já se preocupam com presença online! 👏
 
 Me conta: o site de vocês tem essas funcionalidades?
 
-✅ Chatbot que responde clientes automaticamente 24h
-✅ Blog jurídico com artigos da sua área de atuação
-✅ Otimização para o Google (SEO local)
-✅ Design 100% responsivo no celular
-✅ Domínio .adv.br registrado no nome do escritório
-✅ Suporte e garantia de funcionamento
+✅ Chatbot que responde clientes 24h
+✅ Blog jurídico com artigos da área
+✅ Otimização para o Google (SEO)
+✅ Design responsivo no celular
+✅ Domínio .adv.br registrado
+✅ Suporte e garantia de funcionamento`,
+    ],
+    botoes: [
+      { id: 'msg2b_completo', texto: '💪 Tem tudo isso sim' },
+      { id: 'msg2b_parcial', texto: '🔧 Tem algumas coisas' },
+      { id: 'msg2b_naotem', texto: '👀 Não tem, me conta!' },
+    ],
+    rodape: 'Escolha uma opção 👆',
+  },
 
-1️⃣ Tem tudo isso sim
-2️⃣ Tem algumas coisas, não tudo
-3️⃣ Não tem, me conta mais!`,
-
-  msg2b_fim: `Uau, vocês estão bem preparados! 💪
+  // ─────────────────────────────────────────
+  // MSG2B_FIM — Encerramento positivo (já tem tudo)
+  // ─────────────────────────────────────────
+  msg2b_fim: {
+    textos: [
+      `Uau, vocês estão bem preparados! 💪
 
 Fico feliz em saber que já têm uma presença digital forte.
 
 Só quero deixar meu contato caso precisem de alguma melhoria futura ou queiram renovar o site com um design mais moderno.
 
 Qualquer coisa, pode me chamar. Sucesso pra vocês! 🤝`,
+    ],
+    botoes: null,
+    terminal: true,
+  },
 
-  msg3a: `Ótimo, que bom que toparam! 🎉
+  // ─────────────────────────────────────────
+  // MSG3A — Lead quente! (quer contratar)
+  // ─────────────────────────────────────────
+  msg3a: {
+    textos: [
+      `Ótimo, que bom que toparam! 🎉
 
-Em breve nosso desenvolvedor vai entrar em contato aqui mesmo pra dar continuidade a tudo.
+Em breve nosso desenvolvedor vai entrar em contato aqui mesmo.
 
-Enquanto isso, já vão separando o que vamos precisar pra montar o site de vocês:
+Enquanto isso, já vão separando:
 
-📎 *Logo do escritório* — preferencialmente em PNG com fundo transparente
+📎 *Logo do escritório* — preferencialmente PNG com fundo transparente
+📸 *Fotos dos sócios* — pode ser do LinkedIn ou qualquer uma, fazemos tratamento profissional
+🎨 *Identidade visual* — cores preferidas, estilo (sóbrio, moderno, arrojado)
+📝 *Informações* — nome completo, áreas de atuação, endereço, WhatsApp e e-mail
+🔗 *Domínio desejado* — ex: escritoriosilva.adv.br`,
 
-📸 *Fotos dos sócios* — pode mandar como tiver, do LinkedIn, WhatsApp ou qualquer outra. Nossa equipe faz o tratamento profissional das imagens antes de colocar no site — ficam com cara de book mesmo.
+      `Como funciona nossa entrega:
 
-🎨 *Identidade visual* — nos conte um pouco sobre o estilo que imaginam pro site:
-• *Cores* — têm uma paleta definida? (ex: dourado e preto, azul marinho e branco...)
-• *Estilo* — preferem algo mais sóbrio e tradicional, moderno e clean, ou arrojado?
-• *Temática* — alguma referência visual que admiram? Um site, uma marca, uma cor que já usam nos materiais do escritório?
+⚡ *1º* — Entregamos o site pronto pra vocês aprovarem, sem pagamento ainda
+✅ *2º* — Vocês aprovam, aí confirmamos o pagamento de R$ 299/ano
+🔗 *3º* — Vinculamos o domínio .adv.br, já incluso no valor
 
-📝 *Informações do escritório* — nome completo, áreas de atuação, endereço, WhatsApp e e-mail
+*Zero risco* — primeiro veem, depois pagam. 💪
 
-🔗 *Domínio desejado* — ex: escritoriosilva.adv.br (caso não tenham um ainda)
+Quanto mais detalhes trouxerem, mais rápido entregamos! 🚀`,
+    ],
+    botoes: null,
+    terminal: true,
+  },
 
-Como funciona nossa entrega:
+  // ─────────────────────────────────────────
+  // MSG3B — FAQ / Dúvidas
+  // ─────────────────────────────────────────
+  msg3b: {
+    textos: [
+      `Claro! Me pergunta à vontade 😊
 
-⚡ *1º — Entregamos o site pronto pra vocês aprovarem*, hospedado e funcionando com todas as funcionalidades — sem nenhum pagamento ainda.
+As dúvidas mais comuns:
 
-✅ *2º — Vocês aprovam satisfeitos*, aí confirmamos o pagamento de R$ 299/ano.
+🤖 *Chatbot funciona como?*
+Aparece no site 24h, inicia conversa, coleta nome e WhatsApp e te envia o contato.
 
-🔗 *3º — Vinculamos o domínio .com.br ou .adv.br*, que já está incluso no valor e fica registrado no nome do escritório.
+📝 *Quem escreve os artigos?*
+A gente cria! Com base nas suas áreas, artigos que atraem visitas do Google.
 
-Zero risco pra vocês — primeiro veem, depois pagam. 💪
+🔗 *Domínio incluso mesmo?*
+Sim! .com.br ou .adv.br incluso nos R$ 299/ano, registrado no nome do escritório.
 
-Quanto mais detalhes trouxerem, mais fiel ao estilo de vocês o site vai ficar — e mais rápido o dev entrega! 🚀`,
+💳 *Preciso pagar antes?*
+Não! Entregamos o site funcionando pra aprovarem primeiro.
 
-  msg3b: `Claro! Me pergunta à vontade 😊
+🛡️ *Pode cair?*
+Não. Suporta 100.000 acessos/mês e monitoramos continuamente.
 
-As dúvidas mais comuns são:
+⚖️ *Dentro das normas da OAB?*
+Sim! Provimento 205/2021 respeitado.`,
+    ],
+    botoes: [
+      { id: 'msg3b_contratar', texto: '🔥 Quero contratar!' },
+      { id: 'msg3b_duvidas', texto: '❓ Mais dúvidas' },
+      { id: 'msg3b_pensar', texto: '🤔 Vou pensar...' },
+    ],
+    rodape: 'Escolha uma opção 👆',
+  },
 
-❓ *Como o chatbot funciona na prática?*
-Ele aparece automaticamente no site, inicia uma conversa com o visitante, identifica o problema, coleta nome e WhatsApp e te envia o contato. Você configura as respostas com a gente do jeito que preferir.
+  // ─────────────────────────────────────────
+  // MSG3B_REPEAT — Repetição FAQ (2ª vez)
+  // ─────────────────────────────────────────
+  msg3b_repeat: {
+    textos: [
+      `Sem problema! 😊
 
-❓ *Quem escreve os artigos do blog?*
-A gente cria! Com base nas suas áreas de atuação, produzimos artigos que respondem dúvidas reais dos seus clientes — isso atrai visitas orgânicas do Google sem pagar anúncio.
+Se tiver qualquer dúvida específica, pode digitar aqui que eu respondo.
 
-❓ *O domínio está incluso mesmo?*
-Sim! O .com.br ou .adv.br já está incluso nos R$ 299/ano e fica registrado no nome do escritório. Ele é vinculado após o pagamento, pois tem custo de registro.
+Mas se já se decidiu, é só tocar no botão 👇`,
+    ],
+    botoes: [
+      { id: 'msg3br_contratar', texto: '🔥 Quero contratar!' },
+      { id: 'msg3br_pensar', texto: '🤔 Vou pensar...' },
+    ],
+    rodape: 'Escolha uma opção 👆',
+  },
 
-❓ *Preciso pagar antes de ver o site?*
-Não! Entregamos o site completo e funcionando pra vocês aprovarem primeiro — sem domínio ainda. Só após a aprovação e pagamento vinculamos o domínio definitivo de vocês.
+  // ─────────────────────────────────────────
+  // MSG3C — Follow-up / Não agora
+  // ─────────────────────────────────────────
+  msg3c: {
+    textos: [
+      `Entendo, sem pressão! 🤝
 
-❓ *O site pode cair ou ficar fora do ar?*
-Não. Usamos uma infraestrutura que suporta até 100.000 acessos por mês e monitoramos continuamente. Se qualquer coisa sair do esperado, já resolvemos antes que você perceba.
+💡 Um único cliente captado pelo site já paga o ano inteiro — e sobra muito.
 
-❓ *É dentro das normas da OAB?*
-Sim! Desenvolvemos dentro das regras do Provimento 205/2021. Sem captação irregular, sem promessa de resultado.
+👉 *Vocês veem o site pronto antes de pagar.* Só confirmam o pagamento após aprovar.
 
-Tem mais alguma dúvida? 👇
+O blog jurídico vai acumulando artigos com o tempo — quanto mais tempo online, mais o site aparece no Google e mais clientes chegam automaticamente.
 
-1️⃣ Quero contratar!
-2️⃣ Ainda tenho dúvidas
-3️⃣ Vou pensar...`,
+*Zero risco.* Vocês só pagam se gostarem. 😊
 
-  msg3c: `Entendo, sem pressão! 🤝
-
-Só te deixo um dado pra pensar:
-
-💡 Um único cliente captado pelo site já paga o ano inteiro — e ainda sobra muito.
-
-E tem um detalhe que talvez mude sua decisão:
-
-👉 *Vocês veem o site pronto e funcionando antes de pagar qualquer coisa.* Só depois de aprovar é que confirmamos o pagamento e vinculamos o domínio .adv.br ou .com.br — que já está incluso no valor, sem custo extra.
-
-E o blog jurídico vai acumulando artigos com o tempo — quanto mais tempo online, mais o site aparece no Google e mais clientes chegam de forma automática, sem gastar nada a mais.
-
-Zero risco. Vocês só pagam se gostarem. 😊
-
-Se quiser, posso te mandar uma prévia gratuita já com o nome do escritório pra visualizar como ficaria. Sem compromisso nenhum. 🎨
+Se quiser, posso te mandar uma prévia gratuita com o nome do escritório. Sem compromisso. 🎨
 
 Quando quiser, é só me chamar!`,
+    ],
+    botoes: null,
+    terminal: true,
+  },
 
-  msg3b_repeat: `Claro! Me pergunta à vontade 😊
+  // ─────────────────────────────────────────
+  // FALLBACK — Mensagem para resposta não reconhecida
+  // ─────────────────────────────────────────
+  fallback: {
+    textos: [
+      `Desculpe, não entendi sua resposta 😅
 
-As dúvidas mais comuns são:
-
-❓ *Como o chatbot funciona na prática?*
-Ele aparece automaticamente no site, inicia uma conversa com o visitante, identifica o problema, coleta nome e WhatsApp e te envia o contato. Você configura as respostas com a gente do jeito que preferir.
-
-❓ *Quem escreve os artigos do blog?*
-A gente cria! Com base nas suas áreas de atuação, produzimos artigos que respondem dúvidas reais dos seus clientes — isso atrai visitas orgânicas do Google sem pagar anúncio.
-
-❓ *O domínio está incluso mesmo?*
-Sim! O .com.br ou .adv.br já está incluso nos R$ 299/ano e fica registrado no nome do escritório. Ele é vinculado após o pagamento, pois tem custo de registro.
-
-❓ *Preciso pagar antes de ver o site?*
-Não! Entregamos o site completo e funcionando pra vocês aprovarem primeiro — sem domínio ainda. Só após a aprovação e pagamento vinculamos o domínio definitivo de vocês.
-
-❓ *O site pode cair ou ficar fora do ar?*
-Não. Usamos uma infraestrutura que suporta até 100.000 acessos por mês e monitoramos continuamente. Se qualquer coisa sair do esperado, já resolvemos antes que você perceba.
-
-❓ *É dentro das normas da OAB?*
-Sim! Desenvolvemos dentro das regras do Provimento 205/2021. Sem captação irregular, sem promessa de resultado.
-
-Tem mais alguma dúvida? 👇
-
-1️⃣ Quero contratar!
-2️⃣ Ainda tenho dúvidas
-3️⃣ Vou pensar...`,
+Por favor, toque em um dos botões abaixo para continuar:`,
+    ],
+    botoes: null, // Preenchido dinamicamente com os botões da etapa atual
+    rodape: 'Toque em uma opção acima 👆',
+  },
 };
 
-export const BOTOES: Record<string, any[]> = {
-  msg1: [
-    { id: 'opt_1', texto: '1️⃣ Sim! Quero conhecer', descricao: 'Veja um exemplo de site' },
-    { id: 'opt_2', texto: '2️⃣ Já tenho site', descricao: 'Me conta sobre seu site' },
-    { id: 'opt_3', texto: '3️⃣ Agora não', descricao: 'Sem compromisso' },
-  ],
-  msg2: [
-    { id: 'opt_1', texto: '1️⃣ Quero contratar!', descricao: 'Fechar negócio' },
-    { id: 'opt_2', texto: '2️⃣ Tenho dúvidas', descricao: 'Tirar dúvidas' },
-    { id: 'opt_3', texto: '3️⃣ Vou pensar...', descricao: 'Sem pressa' },
-  ],
-  msg2b: [
-    { id: 'opt_1', texto: '1️⃣ Tem tudo isso sim', descricao: 'Já está completo' },
-    { id: 'opt_2', texto: '2️⃣ Tem algumas coisas', descricao: 'Faltam funcionalidades' },
-    { id: 'opt_3', texto: '3️⃣ Não tem, me conta mais!', descricao: 'Quero saber mais' },
-  ],
-  msg3b: [
-    { id: 'opt_1', texto: '1️⃣ Quero contratar!', descricao: 'Fechar negócio' },
-    { id: 'opt_2', texto: '2️⃣ Ainda tenho dúvidas', descricao: 'Mais perguntas' },
-    { id: 'opt_3', texto: '3️⃣ Vou pensar...', descricao: 'Sem pressa' },
-  ],
-  msg3b_repeat: [
-    { id: 'opt_1', texto: '1️⃣ Quero contratar!', descricao: 'Fechar negócio' },
-    { id: 'opt_3', texto: '3️⃣ Vou pensar...', descricao: 'Sem pressa' },
-  ],
+// ============================================
+// MAPA DE TRANSIÇÕES — Qual botão leva para qual etapa
+// ============================================
+export interface Transicao {
+  proximaEtapa: string;
+  novoStatus: string | null;
+  acao: string;
+}
+
+export const TRANSICOES: Record<string, Transicao> = {
+  // msg1 → Saudação
+  msg1_sim:       { proximaEtapa: 'msg2',     novoStatus: 'respondeu',         acao: 'enviar_msg2' },
+  msg1_site:      { proximaEtapa: 'msg2b',    novoStatus: 'respondeu',         acao: 'enviar_msg2b' },
+  msg1_nao:       { proximaEtapa: 'msg3c',    novoStatus: 'naoInteresse',      acao: 'enviar_msg3c' },
+
+  // msg2 → Portfólio
+  msg2_contratar: { proximaEtapa: 'msg3a',    novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
+  msg2_duvidas:   { proximaEtapa: 'msg3b',    novoStatus: 'respondeu',         acao: 'enviar_msg3b' },
+  msg2_pensar:    { proximaEtapa: 'msg3c',    novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
+
+  // msg2b → Qualificação
+  msg2b_completo: { proximaEtapa: 'msg2b_fim', novoStatus: 'naoInteresse',     acao: 'enviar_msg2b_fim' },
+  msg2b_parcial:  { proximaEtapa: 'msg2',      novoStatus: 'respondeu',        acao: 'enviar_msg2' },
+  msg2b_naotem:   { proximaEtapa: 'msg2',      novoStatus: 'respondeu',        acao: 'enviar_msg2' },
+
+  // msg3b → FAQ
+  msg3b_contratar: { proximaEtapa: 'msg3a',        novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
+  msg3b_duvidas:   { proximaEtapa: 'msg3b_repeat',  novoStatus: 'respondeu',        acao: 'enviar_msg3b_repeat' },
+  msg3b_pensar:    { proximaEtapa: 'msg3c',         novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
+
+  // msg3b_repeat → FAQ 2ª vez
+  msg3br_contratar: { proximaEtapa: 'msg3a', novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
+  msg3br_pensar:    { proximaEtapa: 'msg3c', novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
 };
 
-const OPCOES_RESUMO: Record<string, string> = {
-  msg1: '1️⃣ Sim! Quero conhecer\n2️⃣ Já tenho site\n3️⃣ Agora não',
-  msg2: '1️⃣ Quero contratar!\n2️⃣ Tenho dúvidas\n3️⃣ Vou pensar...',
-  msg2b: '1️⃣ Tem tudo isso sim\n2️⃣ Tem algumas coisas\n3️⃣ Não tem, me conta mais!',
-  msg3b: '1️⃣ Quero contratar!\n2️⃣ Ainda tenho dúvidas\n3️⃣ Vou pensar...',
-  msg3b_repeat: '1️⃣ Quero contratar!\n3️⃣ Vou pensar...',
+// ============================================
+// MAPA NUMÉRICO LEGADO — Quando botões falham ou lead digita "1", "2", "3"
+// Mapeia etapa + número → buttonId equivalente
+// ============================================
+export const MAPA_NUMERICO: Record<string, Record<number, string>> = {
+  inicio:       { 1: 'msg1_sim',       2: 'msg1_site',      3: 'msg1_nao' },
+  msg1:         { 1: 'msg1_sim',       2: 'msg1_site',      3: 'msg1_nao' },
+  msg2:         { 1: 'msg2_contratar', 2: 'msg2_duvidas',   3: 'msg2_pensar' },
+  msg2b:        { 1: 'msg2b_completo', 2: 'msg2b_parcial',  3: 'msg2b_naotem' },
+  msg3b:        { 1: 'msg3b_contratar', 2: 'msg3b_duvidas', 3: 'msg3b_pensar' },
+  msg3b_repeat: { 1: 'msg3br_contratar', 2: 'msg3br_pensar', 3: 'msg3br_pensar' },
 };
 
+// ============================================
+// COMPATIBILIDADE — MENSAGENS e BOTOES antigos
+// ============================================
+export const MENSAGENS: Record<string, string> = {};
+export const BOTOES: Record<string, any[]> = {};
+
+for (const [etapa, fluxo] of Object.entries(FLUXO)) {
+  if (etapa === 'fallback') continue;
+  MENSAGENS[etapa] = fluxo.textos.join('\n\n');
+  if (fluxo.botoes) {
+    BOTOES[etapa] = fluxo.botoes.map(b => ({
+      id: b.id,
+      texto: b.texto,
+      descricao: b.descricao || '',
+    }));
+  }
+}
+
+// ============================================
+// HELPER — Gerar mensagem de fallback com botões da etapa atual
+// ============================================
+export function gerarFallback(etapaAtual: string): { texto: string; botoes: BotaoInterativo[] | null } {
+  const etapa = FLUXO[etapaAtual];
+  if (!etapa || !etapa.botoes) {
+    return { texto: 'Desculpe, não entendi. Um atendente vai te ajudar em breve! 😊', botoes: null };
+  }
+  return {
+    texto: FLUXO.fallback.textos[0],
+    botoes: etapa.botoes,
+  };
+}
+
+// Manter export antigo
 export function gerarMensagemOpcaoInvalida(etapa: string): string | null {
-  const opcoes = OPCOES_RESUMO[etapa];
-  if (!opcoes) return null;
-  return `Desculpe, não entendi sua resposta 😅\n\nPor favor, responda com o *número* da opção desejada:\n\n${opcoes}\n\n💡 *Dica:* Digite apenas o número (1, 2 ou 3) para escolher.`;
+  const fb = gerarFallback(etapa);
+  if (!fb.botoes) return null;
+  const opcoes = fb.botoes.map(b => b.texto).join('\n');
+  return `${fb.texto}\n\n${opcoes}`;
 }

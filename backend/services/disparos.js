@@ -4,8 +4,7 @@
 const Queue = require('bull');
 const prisma = require('../lib/prisma');
 const { enviarMensagem, enviarMensagemComBotoes } = require('./evolution');
-const MENSAGENS = require('./mensagens');
-const { BOTOES } = require('./mensagens');
+const { MENSAGENS, BOTOES, FLUXO } = require('./mensagens');
 const logger = require('./logger');
 let queue = null;
 
@@ -39,11 +38,13 @@ async function inicializarFila() {
         return { sucesso: false, motivo: 'contato_nao_elegivel' };
       }
 
-      // Enviar mensagem (com botões se disponíveis)
-      const botoesEtapa = BOTOES[etapa] || null;
+      // Enviar mensagem (com botões se flag usarBotoes estiver ativa)
+      const { usarBotoes } = job.data;
+      const botoesEtapa = usarBotoes ? (FLUXO[etapa]?.botoes || null) : null;
+      const rodape = FLUXO[etapa]?.rodape || 'Escolha uma opção 👆';
       let resultado;
       if (botoesEtapa) {
-        resultado = await enviarMensagemComBotoes(telefone, mensagem, botoesEtapa, 'Escolha uma opção 👆');
+        resultado = await enviarMensagemComBotoes(telefone, mensagem, botoesEtapa, rodape);
       } else {
         resultado = await enviarMensagem(telefone, mensagem);
       }
@@ -161,16 +162,22 @@ async function dispararCampanha(campanhaId) {
     const contato = contatos[i];
     const delay = calcularDelay(i, campanha.delaySegundos);
 
-    await queue.add('enviar-mensagem', {
-      telefone: contato.telefone,
-      mensagem: MENSAGENS.msg1,
-      contatoId: contato.id,
-      etapa: 'msg1',
-      campanhaId
-    }, {
-      delay,
-      jobId: `campanha-${campanhaId}-contato-${contato.id}-${Date.now()}`
-    });
+    // Enfileirar cada parte do msg1 com delay progressivo
+    const fluxoMsg1 = FLUXO['msg1'];
+    for (let p = 0; p < fluxoMsg1.textos.length; p++) {
+      const isUltimo = p === fluxoMsg1.textos.length - 1;
+      await queue.add('enviar-mensagem', {
+        telefone: contato.telefone,
+        mensagem: fluxoMsg1.textos[p],
+        contatoId: contato.id,
+        etapa: 'msg1',
+        campanhaId,
+        usarBotoes: isUltimo && fluxoMsg1.botoes ? true : false
+      }, {
+        delay: delay + (p * 2000),
+        jobId: `campanha-${campanhaId}-contato-${contato.id}-parte${p}-${Date.now()}`
+      });
+    }
   }
 
   // Se não há mais contatos pendentes para futuras rodadas, marcar campanha como concluída
@@ -211,43 +218,63 @@ async function dispararCampanha(campanhaId) {
  * Enviar mensagem específica do bot (resposta a interação)
  */
 async function enviarMensagemBot(contatoId, etapa) {
-  const mensagem = MENSAGENS[etapa];
-  if (!mensagem) {
-    logger.warn('Etapa de mensagem não encontrada', { etapa });
+  const fluxoEtapa = FLUXO[etapa];
+  if (!fluxoEtapa) {
+    logger.warn('Etapa de mensagem não encontrada no FLUXO', { etapa });
     return { sucesso: false, erro: 'etapa_invalida' };
   }
 
   const contato = await prisma.contato.findUnique({ where: { id: contatoId } });
   if (!contato) return { sucesso: false, erro: 'contato_nao_encontrado' };
 
+  const { textos, botoes, rodape } = fluxoEtapa;
+
   if (queue) {
-    // Com fila — enfileirar com delay mínimo
-    await queue.add('enviar-mensagem', {
-      telefone: contato.telefone,
-      mensagem,
-      contatoId,
-      etapa
-    }, {
-      delay: 2000 + Math.floor(Math.random() * 3000), // 2-5s de delay para parecer humano
-      jobId: `resposta-${contatoId}-${etapa}-${Date.now()}`
-    });
+    // Com fila — enfileirar cada texto com delay progressivo
+    for (let i = 0; i < textos.length; i++) {
+      const isUltimo = i === textos.length - 1;
+      const baseDelay = 2000 + Math.floor(Math.random() * 3000); // 2-5s
+      const delay = baseDelay + (i * 2000); // +2s entre cada parte
+
+      await queue.add('enviar-mensagem', {
+        telefone: contato.telefone,
+        mensagem: textos[i],
+        contatoId,
+        etapa,
+        // Botões só no último texto
+        usarBotoes: isUltimo && botoes ? true : false
+      }, {
+        delay,
+        jobId: `resposta-${contatoId}-${etapa}-parte${i}-${Date.now()}`
+      });
+    }
     return { sucesso: true, modo: 'enfileirado' };
   } else {
-    // Sem fila — envio direto (com botões se disponíveis)
-    const botoesEtapa = BOTOES[etapa] || null;
+    // Sem fila — envio direto sequencial com delay
     let resultado;
-    if (botoesEtapa) {
-      resultado = await enviarMensagemComBotoes(contato.telefone, mensagem, botoesEtapa, 'Escolha uma opção 👆');
-    } else {
-      resultado = await enviarMensagem(contato.telefone, mensagem);
+    for (let i = 0; i < textos.length; i++) {
+      const isUltimo = i === textos.length - 1;
+
+      // Delay entre partes (exceto primeira)
+      if (i > 0) {
+        await new Promise(r => setTimeout(r, 1500 + Math.random() * 1000));
+      }
+
+      if (isUltimo && botoes) {
+        resultado = await enviarMensagemComBotoes(
+          contato.telefone, textos[i], botoes, rodape || 'Escolha uma opção 👆'
+        );
+      } else {
+        resultado = await enviarMensagem(contato.telefone, textos[i]);
+      }
     }
 
-    if (resultado.sucesso) {
+    if (resultado && resultado.sucesso) {
       await prisma.mensagem.create({
         data: {
           contatoId,
           direcao: 'enviada',
-          conteudo: mensagem.substring(0, 500),
+          conteudo: textos.map(t => t.substring(0, 200)).join(' | '),
           etapa
         }
       });

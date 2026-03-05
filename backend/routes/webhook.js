@@ -8,7 +8,7 @@ const { detectarResposta } = require('../services/detector');
 const { enviarMensagemBot } = require('../services/disparos');
 const { notificarLeadQuente } = require('../services/notificacoes');
 const { armazenarQRCode, limparQRCodeCache, enviarMensagem, enviarMensagemComBotoes } = require('../services/evolution');
-const { gerarMensagemOpcaoInvalida, BOTOES } = require('../services/mensagens');
+const { gerarMensagemOpcaoInvalida, gerarFallback, BOTOES, FLUXO } = require('../services/mensagens');
 const logger = require('../services/logger');
 
 // Throttle para CONNECTION_UPDATE (evita flood de logs)
@@ -173,20 +173,18 @@ router.post('/whatsapp', async (req, res) => {
     // REENVIAR OPÇÕES — resposta não reconhecida
     // ============================================
     if (resultado.acao === 'reenviar_opcoes') {
-      const msgInvalida = gerarMensagemOpcaoInvalida(contato.etapaBot);
-      if (msgInvalida) {
-        const botoesEtapa = BOTOES[contato.etapaBot] || null;
-        // Enviar mensagem de "opção inválida" com botões (WPPConnect suporta!)
-        if (botoesEtapa) {
-          await enviarMensagemComBotoes(contato.telefone, msgInvalida, botoesEtapa, 'Escolha uma opção 👆');
+      const fallback = gerarFallback(contato.etapaBot);
+      if (fallback.texto) {
+        if (fallback.botoes) {
+          await enviarMensagemComBotoes(contato.telefone, fallback.texto, fallback.botoes, 'Escolha uma opção 👆');
         } else {
-          await enviarMensagem(contato.telefone, msgInvalida);
+          await enviarMensagem(contato.telefone, fallback.texto);
         }
         await prisma.mensagem.create({
           data: {
             contatoId: contato.id,
             direcao: 'enviada',
-            conteudo: '[Opção inválida - opções reenviadas]',
+            conteudo: '[Opção inválida - botões reenviados]',
             etapa: contato.etapaBot
           }
         });
@@ -195,7 +193,7 @@ router.post('/whatsapp', async (req, res) => {
         status: 'opcao_invalida',
         contato: contato.id,
         etapaAtual: contato.etapaBot,
-        mensagem: 'Resposta não reconhecida, opções reenviadas'
+        mensagem: 'Resposta não reconhecida, botões reenviados'
       });
     }
 
@@ -210,7 +208,7 @@ router.post('/whatsapp', async (req, res) => {
     });
 
     // Enviar próxima mensagem do bot
-    const etapaMensagem = resultado.proximaEtapa === 'msg3b_repeat' ? 'msg3b' : resultado.proximaEtapa;
+    const etapaMensagem = resultado.proximaEtapa;
 
     if (etapaMensagem !== 'atendimento_manual' && etapaMensagem !== 'bloqueado') {
       await enviarMensagemBot(contato.id, etapaMensagem);
