@@ -79,53 +79,14 @@ export async function enviarMensagem(telefone: string, texto: string) {
 export async function enviarMensagemComBotoes(
   telefone: string,
   texto: string,
-  botoes: any[],
-  rodape?: string
+  _botoes?: any[],
+  _rodape?: string
 ) {
-  const numero = formatarTelefone(telefone);
-
-  // 1) Buttons (nativeFlow — Evolution API v2)
-  if (botoes && botoes.length <= 3) {
-    try {
-      const response = await api.post(`/message/sendButtons/${INSTANCE}`, {
-        number: numero,
-        title: '',
-        description: texto.length > 1024 ? texto.substring(0, 1020) + '...' : texto,
-        footer: rodape || 'Toque em uma opção 👆',
-        buttons: botoes.map((b: any) => ({ type: 'reply', displayText: b.texto, id: b.id })),
-      });
-      console.log(`[Evolution] sendButtons OK para ${numero} | tipo: botoes`);
-      return { sucesso: true, data: response.data, tipo: 'botoes' };
-    } catch (e: any) {
-      console.error(`[Evolution] sendButtons FALHOU para ${numero}: ${e.response?.status} ${e.response?.data ? JSON.stringify(e.response.data).substring(0, 200) : e.message}`);
-    }
-  }
-
-  // 2) List (se > 3 botões ou se sendButtons falhou)
-  if (botoes && botoes.length > 0) {
-    try {
-      const response = await api.post(`/message/sendList/${INSTANCE}`, {
-        number: numero,
-        title: 'Escolha uma opção',
-        description: texto.length > 1024 ? texto.substring(0, 1020) + '...' : texto,
-        footerText: rodape || 'Toque para ver opções 👆',
-        buttonText: '📋 Ver opções',
-        sections: [
-          {
-            title: 'Opções disponíveis',
-            rows: botoes.map((b: any) => ({ title: b.texto, description: b.descricao || '', rowId: b.id })),
-          },
-        ],
-      });
-      console.log(`[Evolution] sendList OK para ${numero} | tipo: lista`);
-      return { sucesso: true, data: response.data, tipo: 'lista' };
-    } catch (e: any) {
-      console.error(`[Evolution] sendList FALHOU para ${numero}: ${e.response?.status} ${e.response?.data ? JSON.stringify(e.response.data).substring(0, 200) : e.message}`);
-    }
-  }
-
-  // 3) Fallback: texto com opções embutidas no corpo da mensagem
-  console.log(`[Evolution] Fallback texto puro para ${numero}`);
+  // sendButtons e sendList foram bloqueados pelo WhatsApp para APIs nao-oficiais (Baileys)
+  // Ref: https://github.com/EvolutionAPI/evolution-api/issues/2404
+  // Solucao: enviar texto puro com opcoes numeradas embutidas no corpo da mensagem
+  // O usuario responde digitando o numero (1, 2 ou 3)
+  console.log(`[Evolution] Enviando texto com opcoes numeradas para ${formatarTelefone(telefone)}`);
   return await enviarMensagem(telefone, texto);
 }
 

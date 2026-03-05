@@ -222,5 +222,5 @@ const OPCOES_RESUMO: Record<string, string> = {
 export function gerarMensagemOpcaoInvalida(etapa: string): string | null {
   const opcoes = OPCOES_RESUMO[etapa];
   if (!opcoes) return null;
-  return `Desculpe, não entendi sua resposta 😅\n\nPor favor, escolha uma das opções abaixo:\n\n${opcoes}\n\n💡 *Dica:* Toque em um botão ou digite o número da opção (1, 2 ou 3).`;
+  return `Desculpe, não entendi sua resposta 😅\n\nPor favor, responda com o *número* da opção desejada:\n\n${opcoes}\n\n💡 *Dica:* Digite apenas o número (1, 2 ou 3) para escolher.`;
 }

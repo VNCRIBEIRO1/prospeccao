@@ -1,7 +1,7 @@
-// POST /api/mensagens/enviar-teste — Send test message with buttons
+// POST /api/mensagens/enviar-teste — Send test message (texto puro com opcoes numeradas)
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { enviarMensagem, enviarMensagemComBotoes } from '../../../lib/evolution';
-import { MENSAGENS, BOTOES } from '../../../lib/mensagens';
+import { enviarMensagem } from '../../../lib/evolution';
+import { MENSAGENS } from '../../../lib/mensagens';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -15,25 +15,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const mensagem = MENSAGENS[etapa];
     if (!mensagem) return res.status(400).json({ error: `Etapa "${etapa}" não encontrada` });
 
-    const botoes = BOTOES[etapa] || null;
-    let resultado;
-
-    if (botoes && botoes.length > 0) {
-      resultado = await enviarMensagemComBotoes(
-        telefone,
-        mensagem,
-        botoes,
-        'Escolha uma opção 👆'
-      );
-    } else {
-      resultado = await enviarMensagem(telefone, mensagem);
-    }
+    // Sempre envia como texto puro — opcoes numeradas ja embutidas na mensagem
+    const resultado = await enviarMensagem(telefone, mensagem);
 
     if (resultado.sucesso) {
       return res.json({
         sucesso: true,
         etapa,
-        tipo: resultado.tipo || 'texto',
+        tipo: 'texto',
         data: resultado.data,
       });
     } else {

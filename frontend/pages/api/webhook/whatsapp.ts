@@ -2,8 +2,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
 import { detectarResposta } from '../../../lib/detector';
-import { enviarMensagem, enviarMensagemComBotoes, armazenarQRCode, limparQRCodeCache } from '../../../lib/evolution';
-import { MENSAGENS, BOTOES, gerarMensagemOpcaoInvalida } from '../../../lib/mensagens';
+import { enviarMensagem, armazenarQRCode, limparQRCodeCache } from '../../../lib/evolution';
+import { MENSAGENS, gerarMensagemOpcaoInvalida } from '../../../lib/mensagens';
 import axios from 'axios';
 
 async function enviarMensagemBot(contatoId: number, etapa: string) {
@@ -13,13 +13,8 @@ async function enviarMensagemBot(contatoId: number, etapa: string) {
   const contato = await prisma.contato.findUnique({ where: { id: contatoId } });
   if (!contato) return { sucesso: false, erro: 'contato_nao_encontrado' };
 
-  const botoesEtapa = BOTOES[etapa] || null;
-  let resultado;
-  if (botoesEtapa) {
-    resultado = await enviarMensagemComBotoes(contato.telefone, mensagem, botoesEtapa, 'Escolha uma opção 👆');
-  } else {
-    resultado = await enviarMensagem(contato.telefone, mensagem);
-  }
+  // Sempre envia como texto puro — opcoes numeradas ja estao embutidas na mensagem
+  const resultado = await enviarMensagem(contato.telefone, mensagem);
 
   if (resultado.sucesso) {
     await prisma.mensagem.create({
@@ -195,12 +190,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (resultado.acao === 'reenviar_opcoes') {
       const msgInvalida = gerarMensagemOpcaoInvalida(contato.etapaBot);
       if (msgInvalida) {
-        const botoesEtapa = BOTOES[contato.etapaBot] || null;
-        if (botoesEtapa) {
-          await enviarMensagemComBotoes(contato.telefone, msgInvalida, botoesEtapa, 'Escolha uma opção 👆');
-        } else {
-          await enviarMensagem(contato.telefone, msgInvalida);
-        }
+        await enviarMensagem(contato.telefone, msgInvalida);
         await prisma.mensagem.create({
           data: { contatoId: contato.id, direcao: 'enviada', conteudo: '[Opção inválida - opções reenviadas]', etapa: contato.etapaBot },
         });

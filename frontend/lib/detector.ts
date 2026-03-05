@@ -52,7 +52,7 @@ function resolverOpcao(opcao: number, etapaAtual: string): ResultadoDeteccao {
 export function detectarResposta(texto: string, etapaAtual: string, buttonId?: string | null): ResultadoDeteccao {
   const t = (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
-  // 1) Button click
+  // 1) Button click (ainda funciona caso o WhatsApp reabilite botoes no futuro)
   if (buttonId) {
     const opcao = buttonId === 'opt_1' ? 1 : buttonId === 'opt_2' ? 2 : buttonId === 'opt_3' ? 3 : 0;
     if (opcao > 0) return resolverOpcao(opcao, etapaAtual);
@@ -62,9 +62,15 @@ export function detectarResposta(texto: string, etapaAtual: string, buttonId?: s
   const bloqueio = /\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remover|cancelar|nao me mande|pare de|nao quero mais|me tire|me remove)\b/.test(t);
   if (bloqueio) return { proximaEtapa: 'bloqueado', novoStatus: 'naoInteresse', acao: 'bloquear' };
 
-  // 3) Exact number
-  const apenasNumero = /^[1-3][\.\)\s]*$/.test(t);
-  if (apenasNumero) return resolverOpcao(parseInt(t.charAt(0)), etapaAtual);
+  // 3) Numero digitado (1, 2 ou 3) — aceita emoji, ponto, parentese, espaco
+  const limpo = t.replace(/[\ufe0f\u20e3]/g, ''); // remove emoji variation selectors
+  const matchNumero = limpo.match(/^[^\d]*([1-3])[^\d]*$/);
+  if (matchNumero) return resolverOpcao(parseInt(matchNumero[1]), etapaAtual);
+
+  // 3b) Emoji de numero (1️⃣, 2️⃣, 3️⃣)
+  if (/1\ufe0f?\u20e3/.test(texto)) return resolverOpcao(1, etapaAtual);
+  if (/2\ufe0f?\u20e3/.test(texto)) return resolverOpcao(2, etapaAtual);
+  if (/3\ufe0f?\u20e3/.test(texto)) return resolverOpcao(3, etapaAtual);
 
   // 4) Text analysis
   const opcao1 = /\b(sim|quero|contratar|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal)\b/.test(t);
