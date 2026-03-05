@@ -1,1 +1,35 @@
+# Vercel
 .vercel
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+server-log.txt
+server-err.txt
+
+# IDE
+.vscode/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Build
+tsconfig.tsbuildinfo
+
+# Dev scripts
+start-dev.bat
+start-dev.ps1
+nextjs.log
+nextjs-err.log

@@ -1,7 +1,8 @@
 // ============================================
 // Mensagens do Bot — Templates centralizados
-// REESTRUTURADO: Todas as etapas usam botões nativos WPPConnect
-// Mensagens longas divididas: conteúdo + menu separado
+// REESTRUTURADO v2: Fluxo completo de triagem automatizada
+// Dúvidas com sub-menus, projetos personalizados, restart automático
+// Objetivo: máxima captação sem interferência humana
 // ============================================
 
 // ============================================
@@ -14,7 +15,7 @@ export interface EtapaFluxo {
   botoes: BotaoInterativo[] | null;
   /** Texto do rodapé dos botões */
   rodape?: string;
-  /** Se true, esta é uma etapa terminal (sem continuidade automática) */
+  /** Se true, esta é uma etapa terminal (reinicia em nova mensagem) */
   terminal?: boolean;
 }
 
@@ -25,13 +26,20 @@ export interface BotaoInterativo {
 }
 
 // ============================================
+// ETAPAS TERMINAIS — Ao receber nova mensagem, reinicia de msg1
+// ============================================
+export const ETAPAS_TERMINAIS = [
+  'msg3a', 'msg3c', 'msg2b_fim', 'msg_humano',
+  'atendimento_manual', 'bloqueado',
+];
+
+// ============================================
 // FLUXO COMPLETO — Cada etapa com conteúdo + botões
 // ============================================
 export const FLUXO: Record<string, EtapaFluxo> = {
 
   // ─────────────────────────────────────────
   // INICIO — Alias de msg1 (default do Prisma)
-  // Contatos novos têm etapaBot='inicio'
   // ─────────────────────────────────────────
   inicio: {
     textos: [
@@ -39,7 +47,7 @@ export const FLUXO: Record<string, EtapaFluxo> = {
 
 Você sabia que escritórios de advocacia com site profissional recebem até *3x mais contatos* de clientes novos?
 
-🖥️ Criamos sites premium para advogados com:
+🖥️ Criamos *sites premium + chatbot inteligente* para advogados:
 ✅ Chatbot que atende e capta clientes 24h
 ✅ Blog jurídico com artigos da sua área
 ✅ Domínio .adv.br já incluso
@@ -56,7 +64,7 @@ Tudo isso por apenas *R$ 299/ano* 👇`,
   },
 
   // ─────────────────────────────────────────
-  // MSG1 — Saudação inicial (prospecção fria)
+  // MSG1 — Saudação inicial
   // ─────────────────────────────────────────
   msg1: {
     textos: [
@@ -64,7 +72,7 @@ Tudo isso por apenas *R$ 299/ano* 👇`,
 
 Você sabia que escritórios de advocacia com site profissional recebem até *3x mais contatos* de clientes novos?
 
-🖥️ Criamos sites premium para advogados com:
+🖥️ Criamos *sites premium + chatbot inteligente* para advogados:
 ✅ Chatbot que atende e capta clientes 24h
 ✅ Blog jurídico com artigos da sua área
 ✅ Domínio .adv.br já incluso
@@ -81,36 +89,31 @@ Tudo isso por apenas *R$ 299/ano* 👇`,
   },
 
   // ─────────────────────────────────────────
-  // MSG2 — Portfólio + proposta
-  // Dividida: texto detalhado → menu com botões
+  // MSG2 — Portfólio detalhado + proposta
   // ─────────────────────────────────────────
   msg2: {
     textos: [
       `Perfeito! 🎉
 
-Aqui está um site que entregamos para um escritório de SP 👇
+Veja um site que entregamos para um escritório de SP 👇
 
 🔗 https://cerbeleraeoliveiraadv.vercel.app/
 
-Veja o que está *incluso*:
+O *pacote completo* inclui:
 
-🤖 *Chatbot Inteligente* — Fica no site 24h. Quando um cliente entra, o chatbot inicia a conversa, coleta nome e WhatsApp e te envia o contato direto.
-
-📝 *Blog Jurídico* — Artigos sobre o que seus clientes pesquisam no Google. Atrai visitas orgânicas sem pagar anúncio.
-
-🔍 *SEO Local* — Site otimizado para buscas como "advogado trabalhista em [sua cidade]".
-
-📱 *Design Responsivo* — Funciona no celular, tablet e PC.
-
-🔗 *Domínio .adv.br incluso* — Registrado no nome do escritório.
-
-🛡️ *Infraestrutura robusta* — Aguenta 100.000 acessos/mês sem travar.
-
-🛠️ *Suporte e garantia inclusos*.`,
+🖥️ *Site Profissional* — design moderno, responsivo, com sua identidade visual
+🤖 *Chatbot Inteligente* — atende 24h no site, coleta nome e WhatsApp e te envia o lead automaticamente
+📝 *Blog Jurídico* — artigos otimizados para o Google sobre suas áreas de atuação
+🔍 *SEO Local* — otimizado para buscas como "advogado trabalhista em [sua cidade]"
+🔗 *Domínio .adv.br incluso* — registrado no nome do escritório
+🛡️ *Infraestrutura robusta* — 100.000 acessos/mês, monitoramento contínuo
+🛠️ *Suporte e garantia inclusos*`,
 
       `Tudo personalizado com logo, cores, nome dos sócios e áreas de atuação.
 
 ⚡ Entrega em *1 a 3 dias úteis* por apenas *R$ 299/ano*
+
+👉 E o melhor: *vocês veem o site pronto antes de pagar!*
 
 O que acha? 👇`,
     ],
@@ -129,14 +132,14 @@ O que acha? 👇`,
     textos: [
       `Que ótimo que já se preocupam com presença online! 👏
 
-Me conta: o site de vocês tem essas funcionalidades?
+Me conta: o site de vocês já tem tudo isso?
 
-✅ Chatbot que responde clientes 24h
-✅ Blog jurídico com artigos da área
-✅ Otimização para o Google (SEO)
-✅ Design responsivo no celular
+✅ Chatbot que atende e capta clientes 24h
+✅ Blog jurídico com artigos otimizados pro Google
+✅ SEO local (aparece nas buscas da sua cidade)
+✅ Design responsivo (celular, tablet e PC)
 ✅ Domínio .adv.br registrado
-✅ Suporte e garantia de funcionamento`,
+✅ Suporte técnico e garantia de funcionamento`,
     ],
     botoes: [
       { id: 'msg2b_completo', texto: '💪 Tem tudo isso sim' },
@@ -147,17 +150,23 @@ Me conta: o site de vocês tem essas funcionalidades?
   },
 
   // ─────────────────────────────────────────
-  // MSG2B_FIM — Encerramento positivo (já tem tudo)
+  // MSG2B_FIM — Já tem tudo (encerramento positivo)
   // ─────────────────────────────────────────
   msg2b_fim: {
     textos: [
-      `Uau, vocês estão bem preparados! 💪
+      `Vocês estão bem preparados! 💪
 
 Fico feliz em saber que já têm uma presença digital forte.
 
-Só quero deixar meu contato caso precisem de alguma melhoria futura ou queiram renovar o site com um design mais moderno.
+💡 Caso no futuro precisem de:
+• Redesign mais moderno
+• Chatbot mais inteligente
+• Integrações com sistemas (CRM, agenda, pagamentos)
+• Blog com estratégia de SEO
 
-Qualquer coisa, pode me chamar. Sucesso pra vocês! 🤝`,
+É só me chamar aqui mesmo! Terei prazer em ajudar. 🤝
+
+Sucesso pro escritório! 🚀`,
     ],
     botoes: null,
     terminal: true,
@@ -168,23 +177,23 @@ Qualquer coisa, pode me chamar. Sucesso pra vocês! 🤝`,
   // ─────────────────────────────────────────
   msg3a: {
     textos: [
-      `Ótimo, que bom que toparam! 🎉
+      `Excelente decisão! 🎉🔥
 
-Em breve nosso desenvolvedor vai entrar em contato aqui mesmo.
+Nosso desenvolvedor vai entrar em contato *em breve* aqui mesmo para alinhar os detalhes.
 
-Enquanto isso, já vão separando:
+Enquanto isso, já podem ir separando:
 
 📎 *Logo do escritório* — preferencialmente PNG com fundo transparente
-📸 *Fotos dos sócios* — pode ser do LinkedIn ou qualquer uma, fazemos tratamento profissional
+📸 *Fotos dos sócios* — pode ser do LinkedIn, fazemos tratamento profissional
 🎨 *Identidade visual* — cores preferidas, estilo (sóbrio, moderno, arrojado)
 📝 *Informações* — nome completo, áreas de atuação, endereço, WhatsApp e e-mail
 🔗 *Domínio desejado* — ex: escritoriosilva.adv.br`,
 
-      `Como funciona nossa entrega:
+      `Como funciona:
 
-⚡ *1º* — Entregamos o site pronto pra vocês aprovarem, sem pagamento ainda
-✅ *2º* — Vocês aprovam, aí confirmamos o pagamento de R$ 299/ano
-🔗 *3º* — Vinculamos o domínio .adv.br, já incluso no valor
+⚡ *1º* — Entregamos o site pronto pra aprovarem — *sem pagamento*
+✅ *2º* — Vocês aprovam, aí confirmamos R$ 299/ano
+🔗 *3º* — Vinculamos o domínio .adv.br (já incluso)
 
 *Zero risco* — primeiro veem, depois pagam. 💪
 
@@ -195,83 +204,222 @@ Quanto mais detalhes trouxerem, mais rápido entregamos! 🚀`,
   },
 
   // ─────────────────────────────────────────
-  // MSG3B — FAQ / Dúvidas
+  // MSG_DUVIDAS — Menu de dúvidas (substitui msg3b)
+  // Triagem com opções específicas em vez de texto livre
   // ─────────────────────────────────────────
-  msg3b: {
+  msg_duvidas: {
     textos: [
-      `Claro! Me pergunta à vontade 😊
+      `Claro, vou te ajudar! 😊
 
-As dúvidas mais comuns:
-
-🤖 *Chatbot funciona como?*
-Aparece no site 24h, inicia conversa, coleta nome e WhatsApp e te envia o contato.
-
-📝 *Quem escreve os artigos?*
-A gente cria! Com base nas suas áreas, artigos que atraem visitas do Google.
-
-🔗 *Domínio incluso mesmo?*
-Sim! .com.br ou .adv.br incluso nos R$ 299/ano, registrado no nome do escritório.
-
-💳 *Preciso pagar antes?*
-Não! Entregamos o site funcionando pra aprovarem primeiro.
-
-🛡️ *Pode cair?*
-Não. Suporta 100.000 acessos/mês e monitoramos continuamente.
-
-⚖️ *Dentro das normas da OAB?*
-Sim! Provimento 205/2021 respeitado.`,
+Sobre qual assunto é sua dúvida? 👇`,
     ],
     botoes: [
-      { id: 'msg3b_contratar', texto: '🔥 Quero contratar!' },
-      { id: 'msg3b_duvidas', texto: '❓ Mais dúvidas' },
-      { id: 'msg3b_pensar', texto: '🤔 Vou pensar...' },
+      { id: 'duvida_precos', texto: '💰 Preços e prazos' },
+      { id: 'duvida_incluso', texto: '📦 O que está incluso' },
+      { id: 'duvida_processo', texto: '⚙️ Como funciona' },
+    ],
+    rodape: 'Escolha o tema da dúvida 👆',
+  },
+
+  // ─────────────────────────────────────────
+  // MSG_PRECOS — Detalhes sobre preços e prazos
+  // ─────────────────────────────────────────
+  msg_precos: {
+    textos: [
+      `💰 *Preços e Prazos*
+
+📌 *Pacote Site + Chatbot:* R$ 299/ano (menos de R$ 25/mês!)
+
+O que está nesse valor:
+• Site profissional completo
+• Chatbot inteligente 24h
+• Blog jurídico com artigos
+• Domínio .adv.br registrado
+• Hospedagem, SSL e suporte
+• Monitoramento contínuo
+
+⏰ *Prazo de entrega:* 1 a 3 dias úteis
+
+💳 *Pagamento:* Só após aprovação do site pronto! Aceitamos PIX, cartão e boleto.
+
+💡 Um único cliente captado pelo site já paga o investimento do ano inteiro — e sobra muito!
+
+O que deseja fazer? 👇`,
+    ],
+    botoes: [
+      { id: 'precos_contratar', texto: '🔥 Fechar agora!' },
+      { id: 'precos_personalizado', texto: '🚀 Projeto personalizado' },
+      { id: 'precos_duvidas', texto: '❓ Outras dúvidas' },
     ],
     rodape: 'Escolha uma opção 👆',
   },
 
   // ─────────────────────────────────────────
-  // MSG3B_REPEAT — Repetição FAQ (2ª vez)
+  // MSG_INCLUSO — O que está incluso no pacote
   // ─────────────────────────────────────────
-  msg3b_repeat: {
+  msg_incluso: {
     textos: [
-      `Sem problema! 😊
+      `📦 *O que está incluso no pacote*
 
-Se tiver qualquer dúvida específica, pode digitar aqui que eu respondo.
+🖥️ *Site Profissional:*
+• Design moderno e personalizado
+• Layout responsivo (celular, tablet, PC)
+• Página sobre o escritório e equipe
+• Áreas de atuação detalhadas
+• Página de contato com formulário
+• Mapa do Google integrado
 
-Mas se já se decidiu, é só tocar no botão 👇`,
+🤖 *Chatbot Inteligente:*
+• Aparece automaticamente no site
+• Atende visitantes 24 horas
+• Coleta nome, WhatsApp e assunto
+• Envia os dados do lead direto pra você
+• Personalizado com as cores do escritório
+
+📝 *Blog Jurídico:*
+• Artigos escritos por nós
+• Otimizados para aparecer no Google
+• Temas baseados nas suas áreas de atuação
+• Atrai clientes sem pagar anúncio
+
+🔗 *Extras inclusos:*
+• Domínio .adv.br registrado
+• Certificado SSL (cadeado verde)
+• Hospedagem premium
+• Suporte técnico
+• Conformidade com OAB (Provimento 205/2021)
+
+Tudo por *R$ 299/ano*! 👇`,
     ],
     botoes: [
-      { id: 'msg3br_contratar', texto: '🔥 Quero contratar!' },
-      { id: 'msg3br_pensar', texto: '🤔 Vou pensar...' },
+      { id: 'incluso_contratar', texto: '🔥 Quero contratar!' },
+      { id: 'incluso_personalizado', texto: '🚀 Projeto personalizado' },
+      { id: 'incluso_duvidas', texto: '❓ Outras dúvidas' },
     ],
     rodape: 'Escolha uma opção 👆',
   },
 
   // ─────────────────────────────────────────
-  // MSG3C — Follow-up / Não agora
+  // MSG_PROCESSO — Como funciona o processo
   // ─────────────────────────────────────────
-  msg3c: {
+  msg_processo: {
     textos: [
-      `Entendo, sem pressão! 🤝
+      `⚙️ *Como funciona o processo*
 
-💡 Um único cliente captado pelo site já paga o ano inteiro — e sobra muito.
+É muito simples e sem burocracia:
 
-👉 *Vocês veem o site pronto antes de pagar.* Só confirmam o pagamento após aprovar.
+*1️⃣ Conversa inicial*
+Você nos envia as informações do escritório (logo, fotos, áreas de atuação, cores).
 
-O blog jurídico vai acumulando artigos com o tempo — quanto mais tempo online, mais o site aparece no Google e mais clientes chegam automaticamente.
+*2️⃣ Criação do site (1-3 dias)*
+Desenvolvemos tudo: site, chatbot, blog, SEO — personalizado pra vocês.
 
-*Zero risco.* Vocês só pagam se gostarem. 😊
+*3️⃣ Aprovação sem compromisso*
+Vocês veem o site *pronto e funcionando* antes de qualquer pagamento.
 
-Se quiser, posso te mandar uma prévia gratuita com o nome do escritório. Sem compromisso. 🎨
+*4️⃣ Pagamento só se aprovar*
+Gostaram? Aí sim confirmamos R$ 299/ano (PIX, cartão ou boleto).
 
-Quando quiser, é só me chamar!`,
+*5️⃣ Publicação*
+Registramos o domínio .adv.br e publicamos. Site no ar! 🚀
+
+*6️⃣ Suporte contínuo*
+Monitoramos o site, corrigimos qualquer problema e vocês têm suporte direto.
+
+✅ *Zero risco* — não gostou, não paga.
+
+O que deseja fazer? 👇`,
+    ],
+    botoes: [
+      { id: 'processo_contratar', texto: '🔥 Quero contratar!' },
+      { id: 'processo_duvidas', texto: '❓ Outras dúvidas' },
+      { id: 'processo_pensar', texto: '🤔 Vou pensar...' },
+    ],
+    rodape: 'Escolha uma opção 👆',
+  },
+
+  // ─────────────────────────────────────────
+  // MSG_PERSONALIZADO — Projetos personalizados / Integrações
+  // Para quem quer mais que o pacote base
+  // ─────────────────────────────────────────
+  msg_personalizado: {
+    textos: [
+      `🚀 *Projetos Personalizados*
+
+Além do pacote base (site + chatbot), também desenvolvemos soluções sob medida:
+
+🔧 *Integrações disponíveis:*
+• CRM jurídico integrado ao site
+• Agendamento online de consultas
+• Sistema de pagamentos e honorários
+• Painel administrativo personalizado
+• Automações de WhatsApp avançadas
+
+🏗️ *Sistemas completos:*
+• Transformar o site num *ecossistema digital completo*
+• Gestão de clientes, processos e prazos
+• Portal do cliente com acompanhamento
+• Dashboard com métricas do escritório
+
+💰 Esses projetos têm *valores personalizados* de acordo com a complexidade e necessidade de cada escritório.
+
+Como quer prosseguir? 👇`,
+    ],
+    botoes: [
+      { id: 'pers_falar', texto: '💬 Falar com desenvolvedor' },
+      { id: 'pers_base', texto: '🔥 Quero o pacote base' },
+      { id: 'pers_pensar', texto: '🤔 Vou pensar...' },
+    ],
+    rodape: 'Escolha uma opção 👆',
+  },
+
+  // ─────────────────────────────────────────
+  // MSG_HUMANO — Encaminhamento para o desenvolvedor
+  // Último recurso — bot não consegue resolver
+  // ─────────────────────────────────────────
+  msg_humano: {
+    textos: [
+      `Perfeito! 💬
+
+Vou encaminhar sua conversa para nosso desenvolvedor. Ele vai te responder *em breve* aqui mesmo neste chat.
+
+📋 Ele poderá te ajudar com:
+• Projetos personalizados e orçamentos
+• Integrações específicas
+• Qualquer dúvida técnica
+
+⏰ Horário de atendimento: Seg-Sex, 8h às 18h
+
+Enquanto isso, se quiser adiantar, pode já mandar detalhes do que precisa! 😊`,
     ],
     botoes: null,
     terminal: true,
   },
 
   // ─────────────────────────────────────────
-  // FALLBACK — Mensagem para resposta não reconhecida
+  // MSG3C — Despedida / Não agora / Vou pensar
+  // ─────────────────────────────────────────
+  msg3c: {
+    textos: [
+      `Entendo, sem pressão nenhuma! 🤝
+
+💡 Só deixo alguns fatos pra reflexão:
+
+• Um único cliente captado pelo site já paga o *ano inteiro*
+• O chatbot trabalha 24h captando leads *sem custo extra*
+• O blog vai acumulando artigos e atraindo visitas do Google *automaticamente*
+• Vocês veem o site *pronto antes de pagar* — zero risco
+
+Se mudar de ideia, é só me mandar uma mensagem aqui que recomeçamos! 😊
+
+Sucesso pro escritório! 🚀`,
+    ],
+    botoes: null,
+    terminal: true,
+  },
+
+  // ─────────────────────────────────────────
+  // FALLBACK — Resposta não reconhecida
   // ─────────────────────────────────────────
   fallback: {
     textos: [
@@ -279,7 +427,7 @@ Quando quiser, é só me chamar!`,
 
 Por favor, toque em um dos botões abaixo para continuar:`,
     ],
-    botoes: null, // Preenchido dinamicamente com os botões da etapa atual
+    botoes: null,
     rodape: 'Toque em uma opção acima 👆',
   },
 };
@@ -300,36 +448,54 @@ export const TRANSICOES: Record<string, Transicao> = {
   msg1_nao:       { proximaEtapa: 'msg3c',    novoStatus: 'naoInteresse',      acao: 'enviar_msg3c' },
 
   // msg2 → Portfólio
-  msg2_contratar: { proximaEtapa: 'msg3a',    novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
-  msg2_duvidas:   { proximaEtapa: 'msg3b',    novoStatus: 'respondeu',         acao: 'enviar_msg3b' },
-  msg2_pensar:    { proximaEtapa: 'msg3c',    novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
+  msg2_contratar:  { proximaEtapa: 'msg3a',        novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
+  msg2_duvidas:    { proximaEtapa: 'msg_duvidas',   novoStatus: 'respondeu',        acao: 'enviar_msg_duvidas' },
+  msg2_pensar:     { proximaEtapa: 'msg3c',         novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
 
-  // msg2b → Qualificação
+  // msg2b → Qualificação (já tem site)
   msg2b_completo: { proximaEtapa: 'msg2b_fim', novoStatus: 'naoInteresse',     acao: 'enviar_msg2b_fim' },
   msg2b_parcial:  { proximaEtapa: 'msg2',      novoStatus: 'respondeu',        acao: 'enviar_msg2' },
   msg2b_naotem:   { proximaEtapa: 'msg2',      novoStatus: 'respondeu',        acao: 'enviar_msg2' },
 
-  // msg3b → FAQ
-  msg3b_contratar: { proximaEtapa: 'msg3a',        novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
-  msg3b_duvidas:   { proximaEtapa: 'msg3b_repeat',  novoStatus: 'respondeu',        acao: 'enviar_msg3b_repeat' },
-  msg3b_pensar:    { proximaEtapa: 'msg3c',         novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
+  // msg_duvidas → Menu de dúvidas
+  duvida_precos:   { proximaEtapa: 'msg_precos',   novoStatus: 'respondeu', acao: 'enviar_msg_precos' },
+  duvida_incluso:  { proximaEtapa: 'msg_incluso',  novoStatus: 'respondeu', acao: 'enviar_msg_incluso' },
+  duvida_processo: { proximaEtapa: 'msg_processo',  novoStatus: 'respondeu', acao: 'enviar_msg_processo' },
 
-  // msg3b_repeat → FAQ 2ª vez
-  msg3br_contratar: { proximaEtapa: 'msg3a', novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
-  msg3br_pensar:    { proximaEtapa: 'msg3c', novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
+  // msg_precos → Após ver preços
+  precos_contratar:    { proximaEtapa: 'msg3a',             novoStatus: 'interessado', acao: 'enviar_msg3a_notificar' },
+  precos_personalizado: { proximaEtapa: 'msg_personalizado', novoStatus: 'respondeu',  acao: 'enviar_msg_personalizado' },
+  precos_duvidas:      { proximaEtapa: 'msg_duvidas',        novoStatus: 'respondeu',  acao: 'enviar_msg_duvidas' },
+
+  // msg_incluso → Após ver o que inclui
+  incluso_contratar:    { proximaEtapa: 'msg3a',             novoStatus: 'interessado', acao: 'enviar_msg3a_notificar' },
+  incluso_personalizado: { proximaEtapa: 'msg_personalizado', novoStatus: 'respondeu',  acao: 'enviar_msg_personalizado' },
+  incluso_duvidas:      { proximaEtapa: 'msg_duvidas',        novoStatus: 'respondeu',  acao: 'enviar_msg_duvidas' },
+
+  // msg_processo → Após ver como funciona
+  processo_contratar: { proximaEtapa: 'msg3a',       novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
+  processo_duvidas:   { proximaEtapa: 'msg_duvidas',  novoStatus: 'respondeu',        acao: 'enviar_msg_duvidas' },
+  processo_pensar:    { proximaEtapa: 'msg3c',        novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
+
+  // msg_personalizado → Projetos personalizados
+  pers_falar:  { proximaEtapa: 'msg_humano', novoStatus: 'interessado',       acao: 'enviar_msg_humano_notificar' },
+  pers_base:   { proximaEtapa: 'msg3a',      novoStatus: 'interessado',       acao: 'enviar_msg3a_notificar' },
+  pers_pensar: { proximaEtapa: 'msg3c',      novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
 };
 
 // ============================================
-// MAPA NUMÉRICO LEGADO — Quando botões falham ou lead digita "1", "2", "3"
-// Mapeia etapa + número → buttonId equivalente
+// MAPA NUMÉRICO LEGADO — lead digita "1", "2", "3"
 // ============================================
 export const MAPA_NUMERICO: Record<string, Record<number, string>> = {
-  inicio:       { 1: 'msg1_sim',       2: 'msg1_site',      3: 'msg1_nao' },
-  msg1:         { 1: 'msg1_sim',       2: 'msg1_site',      3: 'msg1_nao' },
-  msg2:         { 1: 'msg2_contratar', 2: 'msg2_duvidas',   3: 'msg2_pensar' },
-  msg2b:        { 1: 'msg2b_completo', 2: 'msg2b_parcial',  3: 'msg2b_naotem' },
-  msg3b:        { 1: 'msg3b_contratar', 2: 'msg3b_duvidas', 3: 'msg3b_pensar' },
-  msg3b_repeat: { 1: 'msg3br_contratar', 2: 'msg3br_pensar', 3: 'msg3br_pensar' },
+  inicio:            { 1: 'msg1_sim',           2: 'msg1_site',          3: 'msg1_nao' },
+  msg1:              { 1: 'msg1_sim',           2: 'msg1_site',          3: 'msg1_nao' },
+  msg2:              { 1: 'msg2_contratar',     2: 'msg2_duvidas',       3: 'msg2_pensar' },
+  msg2b:             { 1: 'msg2b_completo',     2: 'msg2b_parcial',      3: 'msg2b_naotem' },
+  msg_duvidas:       { 1: 'duvida_precos',      2: 'duvida_incluso',     3: 'duvida_processo' },
+  msg_precos:        { 1: 'precos_contratar',   2: 'precos_personalizado', 3: 'precos_duvidas' },
+  msg_incluso:       { 1: 'incluso_contratar',  2: 'incluso_personalizado', 3: 'incluso_duvidas' },
+  msg_processo:      { 1: 'processo_contratar', 2: 'processo_duvidas',   3: 'processo_pensar' },
+  msg_personalizado: { 1: 'pers_falar',         2: 'pers_base',          3: 'pers_pensar' },
 };
 
 // ============================================
@@ -356,7 +522,7 @@ for (const [etapa, fluxo] of Object.entries(FLUXO)) {
 export function gerarFallback(etapaAtual: string): { texto: string; botoes: BotaoInterativo[] | null } {
   const etapa = FLUXO[etapaAtual];
   if (!etapa || !etapa.botoes) {
-    return { texto: 'Desculpe, não entendi. Um atendente vai te ajudar em breve! 😊', botoes: null };
+    return { texto: 'Desculpe, não entendi. Pode tocar em um botão acima ou me enviar outra mensagem! 😊', botoes: null };
   }
   return {
     texto: FLUXO.fallback.textos[0],

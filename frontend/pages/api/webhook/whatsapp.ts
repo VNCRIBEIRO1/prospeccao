@@ -7,7 +7,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
 import { detectarResposta } from '../../../lib/detector';
 import { enviarMensagem, enviarMensagemComBotoes, armazenarQRCode, limparQRCodeCache } from '../../../lib/evolution';
-import { FLUXO, gerarFallback, gerarMensagemOpcaoInvalida, BOTOES } from '../../../lib/mensagens';
+import { FLUXO, ETAPAS_TERMINAIS, gerarFallback, gerarMensagemOpcaoInvalida, BOTOES } from '../../../lib/mensagens';
 import type { EtapaFluxo, BotaoInterativo } from '../../../lib/mensagens';
 import axios from 'axios';
 
@@ -22,6 +22,18 @@ import axios from 'axios';
 const processedMessages = new Map<string, number>();
 const processedContent = new Map<string, number>();
 const processedRawButtons = new Map<string, number>();
+
+// Cache persistente de mapeamento LID → telefone real
+// Sobrevive entre requests (mesmo processo), perdido ao reiniciar servidor
+const lidToPhoneMap = new Map<string, string>();
+
+function storeLidMapping(lidPhone: string, realPhone: string) {
+  if (lidPhone && realPhone && lidPhone !== realPhone) {
+    lidToPhoneMap.set(lidPhone, realPhone);
+    console.log(`[Webhook] 📌 LID cache armazenado: ${lidPhone} → ${realPhone}`);
+  }
+}
+
 const DEDUP_TTL_MS = 30_000; // 30 segundos
 const DEDUP_CONTENT_TTL_MS = 10_000; // 10 segundos para dedup por conteúdo
 
@@ -259,6 +271,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!contato && isLidNumber) {
       console.log(`[Webhook] 🔄 Número LID detectado: ${telefone} — buscando contato real...`);
 
+      const originalLidPhone = telefone; // Guardar LID original para cache
+
+      // Estratégia 0: Cache de mapeamento LID (mais rápido, mais confiável)
+      const cachedPhone = lidToPhoneMap.get(telefone);
+      if (cachedPhone) {
+        contato = await prisma.contato.findFirst({ where: { telefone: cachedPhone } });
+        if (contato) {
+          telefone = contato.telefone;
+          console.log(`[Webhook] 🔄 LID mapeado via cache → contato ${contato.id} (${contato.telefone})`);
+        }
+      }
+
       // Estratégia 1: Extrair número real de campos do payload
       const candidatos = [
         payload.sender?.id?.replace(/@(c\.us|lid|s\.whatsapp\.net)$/g, ''),
@@ -272,6 +296,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
         if (contato) {
           telefone = contato.telefone;
+          storeLidMapping(originalLidPhone, telefone);
           console.log(`[Webhook] 🔄 LID mapeado via payload → contato ${contato.id} (${contato.telefone})`);
           break;
         }
@@ -299,6 +324,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           });
           if (contato) {
             telefone = contato.telefone;
+            storeLidMapping(originalLidPhone, telefone);
             console.log(`[Webhook] 🔄 LID mapeado via buttonId "${buttonId}" → contato ${contato.id} (${contato.telefone}) na etapa ${contato.etapaBot}`);
           }
         }
@@ -313,11 +339,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
         if (ultimaMsgEnviada?.contato && ultimaMsgEnviada.criadoEm) {
           const diffMs = Date.now() - new Date(ultimaMsgEnviada.criadoEm).getTime();
-          if (diffMs < 5 * 60 * 1000) {
+          if (diffMs < 60 * 60 * 1000) { // 60 minutos (expandido de 5 min)
             contato = ultimaMsgEnviada.contato;
             telefone = contato.telefone;
+            storeLidMapping(originalLidPhone, telefone);
             console.log(`[Webhook] 🔄 LID mapeado por última msg enviada → contato ${contato.id} (${contato.telefone})`);
           }
+        }
+      }
+
+      // Estratégia 4: Contato ativo em etapa não-terminal (fallback amplo)
+      if (!contato) {
+        const ETAPAS_TERMINAIS_LID = ['msg3a', 'msg3c', 'msg2b_fim', 'atendimento_manual', 'bloqueado'];
+        contato = await prisma.contato.findFirst({
+          where: {
+            etapaBot: { notIn: ETAPAS_TERMINAIS_LID },
+            status: { not: 'naoInteresse' },
+          },
+          orderBy: { atualizadoEm: 'desc' },
+        });
+        if (contato) {
+          telefone = contato.telefone;
+          storeLidMapping(originalLidPhone, telefone);
+          console.log(`[Webhook] 🔄 LID mapeado via contato ativo → contato ${contato.id} (${contato.telefone}) etapa ${contato.etapaBot}`);
         }
       }
 
@@ -396,7 +440,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     console.log(`[Webhook] 🎯 Detecção: etapa=${etapaAtual} → ação=${resultado.acao} → próxima=${resultado.proximaEtapa} | btn=${resultado.buttonId || 'nenhum'}`);
 
-    // ─── AÇÃO: Manual (etapa terminal) ───
+    // ─── AÇÃO: Restart (contato em etapa terminal envia nova mensagem) ───
+    // Em vez de ir para manual, reinicia o fluxo de msg1
+    if (resultado.acao === 'restart') {
+      console.log(`[Webhook] 🔄 Restart: contato ${contato.id} estava em ${etapaAtual}, reiniciando fluxo`);
+      await prisma.contato.update({
+        where: { id: contato.id },
+        data: { etapaBot: 'msg1', status: 'respondeu' },
+      });
+      await enviarEtapaBot(contato.id, 'msg1');
+      return res.json({
+        status: 'restart',
+        contato: contato.id,
+        etapaAnterior: etapaAtual,
+        proximaEtapa: 'msg1',
+      });
+    }
+
+    // ─── AÇÃO: Manual (fallback extremo) ───
     if (!resultado.proximaEtapa || resultado.acao === 'manual') {
       return res.json({ status: 'manual', contato: contato.id, etapaAtual });
     }
@@ -446,20 +507,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await prisma.contato.update({ where: { id: contato.id }, data: updateData });
 
     // Enviar próxima etapa (com mensagens múltiplas + botões)
-    const etapaMensagem = resultado.proximaEtapa === 'msg3b_repeat' ? 'msg3b_repeat' : resultado.proximaEtapa;
+    const etapaMensagem = resultado.proximaEtapa;
     if (etapaMensagem !== 'atendimento_manual' && etapaMensagem !== 'bloqueado') {
       await enviarEtapaBot(contato.id, etapaMensagem);
     }
 
     // ─── Lead quente? Notificar! ───
-    if (resultado.acao === 'enviar_msg3a_notificar') {
+    if (resultado.acao === 'enviar_msg3a_notificar' || resultado.acao === 'enviar_msg_humano_notificar') {
+      const tipoLead = resultado.acao === 'enviar_msg_humano_notificar' ? 'projeto_personalizado' : 'interessado';
       const leadExistente = await prisma.lead.findFirst({ where: { contatoId: contato.id } });
       if (!leadExistente) {
         await prisma.lead.create({
-          data: { contatoId: contato.id, estagio: 'interessado', notas: `Lead quente em ${new Date().toLocaleString('pt-BR')}` },
+          data: { contatoId: contato.id, estagio: tipoLead, notas: `${tipoLead === 'projeto_personalizado' ? 'Projeto personalizado' : 'Lead quente'} em ${new Date().toLocaleString('pt-BR')}` },
         });
       } else {
-        await prisma.lead.update({ where: { id: leadExistente.id }, data: { estagio: 'interessado' } });
+        await prisma.lead.update({ where: { id: leadExistente.id }, data: { estagio: tipoLead } });
       }
       const contatoCompleto = await prisma.contato.findUnique({ where: { id: contato.id } });
       if (contatoCompleto) await notificarLeadQuente(contatoCompleto);

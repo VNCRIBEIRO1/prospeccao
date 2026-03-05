@@ -1,9 +1,9 @@
 // ============================================
 // Detecção de Resposta — Motor de decisão do Bot
-// REESTRUTURADO: Usa TRANSICOES por buttonId nomeado
-// Suporta: botões nativos, listas, texto livre, números legados
+// REESTRUTURADO v2: Suporta novas etapas de dúvidas, personalizado, humano
+// Prioridade: botão nativo → bloqueio → número → texto botão → semântica → fallback
 // ============================================
-import { TRANSICOES, MAPA_NUMERICO, FLUXO } from './mensagens';
+import { TRANSICOES, MAPA_NUMERICO, FLUXO, ETAPAS_TERMINAIS } from './mensagens';
 import type { Transicao } from './mensagens';
 
 export interface ResultadoDeteccao {
@@ -13,15 +13,13 @@ export interface ResultadoDeteccao {
   buttonId?: string; // O botão que foi resolvido
 }
 
-const ETAPAS_TERMINAIS = ['msg3a', 'msg3c', 'msg2b_fim', 'atendimento_manual', 'bloqueado'];
-
 // Palavras/frases que bloqueiam o bot imediatamente
 const REGEX_BLOQUEIO = /\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remover|cancelar|stop|chega|nao insista)\b|nao me mande|pare de|para de me|nao quero mais|me tire|me remove|nao manda mais|nao mande mais|para com isso/;
 
-// Palavras-chave por intenção — POR ETAPA (corrige falsos positivos)
+// Palavras-chave por intenção — POR ETAPA
 // Cada etapa tem mapeamento específico: regex → número da opção
 const SEMANTICA_POR_ETAPA: Record<string, Array<{ regex: RegExp; opcao: number }>> = {
-  // inicio: alias de msg1 (default do Prisma)
+  // inicio: alias de msg1
   inicio: [
     { regex: /\b(sim|quero|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado|como funciona|me conta|fala mais|saber mais|explica|informacoes|oi|ola|bom dia|boa tarde|boa noite|eai|fala|salve|hey|hello|opa|oie|oii|e ai)\b/, opcao: 1 },
     { regex: /\b(tenho site|ja tenho|meu site|nosso site|temos site)\b/, opcao: 2 },
@@ -36,7 +34,7 @@ const SEMANTICA_POR_ETAPA: Record<string, Array<{ regex: RegExp; opcao: number }
   // msg2: 1=Quero contratar, 2=Tenho dúvidas, 3=Vou pensar
   msg2: [
     { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|massa|legal)\b/, opcao: 1 },
-    { regex: /\b(duvida|pergunta|como funciona|explica|saber mais|me conta|fala mais|informacoes)\b/, opcao: 2 },
+    { regex: /\b(duvida|pergunta|como funciona|explica|saber mais|me conta|fala mais|informacoes|preco|valor|quanto|custa|incluso|inclui)\b/, opcao: 2 },
     { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao sei)\b/, opcao: 3 },
   ],
   // msg2b: 1=Tem tudo, 2=Tem algumas coisas, 3=Não tem
@@ -45,16 +43,35 @@ const SEMANTICA_POR_ETAPA: Record<string, Array<{ regex: RegExp; opcao: number }
     { regex: /\b(parcial|algumas|algumas coisas|parte|mais ou menos|nem tudo)\b/, opcao: 2 },
     { regex: /\b(nao|nao tem|nenhum|nada|me conta|quero saber)\b/, opcao: 3 },
   ],
-  // msg3b: 1=Quero contratar, 2=Mais dúvidas, 3=Vou pensar
-  msg3b: [
-    { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top)\b/, opcao: 1 },
-    { regex: /\b(duvida|pergunta|como funciona|explica|saber mais|outra)\b/, opcao: 2 },
-    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa)\b/, opcao: 3 },
+  // msg_duvidas: 1=Preços, 2=O que inclui, 3=Como funciona
+  msg_duvidas: [
+    { regex: /\b(preco|valor|quanto|custa|custo|pagamento|pagar|barato|caro|investimento|prazo|demora|tempo|dias|entrega)\b/, opcao: 1 },
+    { regex: /\b(incluso|inclui|pacote|contem|vem com|oferece|funcionalidade|recurso|tem o que)\b/, opcao: 2 },
+    { regex: /\b(funciona|processo|etapa|passo|como faz|como e|procedimento|comecar|inicio)\b/, opcao: 3 },
   ],
-  // msg3b_repeat: 1=Quero contratar, 2=Vou pensar
-  msg3b_repeat: [
-    { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top)\b/, opcao: 1 },
-    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao|obrigado|valeu)\b/, opcao: 2 },
+  // msg_precos: 1=Fechar, 2=Personalizado, 3=Outras dúvidas
+  msg_precos: [
+    { regex: /\b(sim|quero|contratar|fechar|aceito|bora|vamos|claro|com certeza|fechado|manda|pode|show|top)\b/, opcao: 1 },
+    { regex: /\b(personalizado|customizado|sob medida|integracao|sistema|crm|especifico|diferente|maior|complexo)\b/, opcao: 2 },
+    { regex: /\b(duvida|pergunta|outra|mais|saber|incluso|funciona)\b/, opcao: 3 },
+  ],
+  // msg_incluso: 1=Contratar, 2=Personalizado, 3=Outras dúvidas
+  msg_incluso: [
+    { regex: /\b(sim|quero|contratar|fechar|aceito|bora|vamos|claro|com certeza|fechado|manda|pode|show|top)\b/, opcao: 1 },
+    { regex: /\b(personalizado|customizado|sob medida|integracao|sistema|crm|especifico|diferente|maior|complexo)\b/, opcao: 2 },
+    { regex: /\b(duvida|pergunta|outra|mais|saber|preco|funciona)\b/, opcao: 3 },
+  ],
+  // msg_processo: 1=Contratar, 2=Outras dúvidas, 3=Vou pensar
+  msg_processo: [
+    { regex: /\b(sim|quero|contratar|fechar|aceito|bora|vamos|claro|com certeza|fechado|manda|pode|show|top)\b/, opcao: 1 },
+    { regex: /\b(duvida|pergunta|outra|mais|saber|preco|incluso)\b/, opcao: 2 },
+    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao sei|nao|obrigado|valeu)\b/, opcao: 3 },
+  ],
+  // msg_personalizado: 1=Falar com dev, 2=Pacote base, 3=Vou pensar
+  msg_personalizado: [
+    { regex: /\b(falar|conversar|atendente|humano|pessoa|desenvolvedor|dev|contato|ligar|chamar)\b/, opcao: 1 },
+    { regex: /\b(sim|quero|contratar|fechar|aceito|bora|vamos|base|pacote|basico|padrao|normal)\b/, opcao: 2 },
+    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao sei|nao|obrigado|valeu)\b/, opcao: 3 },
   ],
 };
 
@@ -202,10 +219,10 @@ export function detectarResposta(
   // 6) FALLBACK — Não entendeu
   // ════════════════════════════════════════
 
-  // Etapas terminais → atendimento manual
+  // Etapas terminais → NÃO encaminha para manual, será tratado pelo webhook (restart)
   if (ETAPAS_TERMINAIS.includes(etapaAtual)) {
-    console.log(`[Detector] 👤 Etapa terminal, encaminhando para manual: ${etapaAtual}`);
-    return { proximaEtapa: 'atendimento_manual', novoStatus: null, acao: 'manual' };
+    console.log(`[Detector] 🔄 Etapa terminal ${etapaAtual}, sinalizando restart`);
+    return { proximaEtapa: 'restart', novoStatus: null, acao: 'restart' };
   }
 
   // Etapas com opções → reenviar botões
