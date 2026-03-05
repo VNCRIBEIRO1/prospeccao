@@ -84,7 +84,7 @@ export async function enviarMensagemComBotoes(
 ) {
   const numero = formatarTelefone(telefone);
 
-  // 1) Buttons
+  // 1) Buttons (nativeFlow — Evolution API v2)
   if (botoes && botoes.length <= 3) {
     try {
       const response = await api.post(`/message/sendButtons/${INSTANCE}`, {
@@ -94,11 +94,14 @@ export async function enviarMensagemComBotoes(
         footer: rodape || 'Toque em uma opção 👆',
         buttons: botoes.map((b: any) => ({ type: 'reply', displayText: b.texto, id: b.id })),
       });
+      console.log(`[Evolution] sendButtons OK para ${numero} | tipo: botoes`);
       return { sucesso: true, data: response.data, tipo: 'botoes' };
-    } catch {}
+    } catch (e: any) {
+      console.error(`[Evolution] sendButtons FALHOU para ${numero}: ${e.response?.status} ${e.response?.data ? JSON.stringify(e.response.data).substring(0, 200) : e.message}`);
+    }
   }
 
-  // 2) List
+  // 2) List (se > 3 botões ou se sendButtons falhou)
   if (botoes && botoes.length > 0) {
     try {
       const response = await api.post(`/message/sendList/${INSTANCE}`, {
@@ -114,11 +117,15 @@ export async function enviarMensagemComBotoes(
           },
         ],
       });
+      console.log(`[Evolution] sendList OK para ${numero} | tipo: lista`);
       return { sucesso: true, data: response.data, tipo: 'lista' };
-    } catch {}
+    } catch (e: any) {
+      console.error(`[Evolution] sendList FALHOU para ${numero}: ${e.response?.status} ${e.response?.data ? JSON.stringify(e.response.data).substring(0, 200) : e.message}`);
+    }
   }
 
-  // 3) Fallback: plain text
+  // 3) Fallback: texto com opções embutidas no corpo da mensagem
+  console.log(`[Evolution] Fallback texto puro para ${numero}`);
   return await enviarMensagem(telefone, texto);
 }
 

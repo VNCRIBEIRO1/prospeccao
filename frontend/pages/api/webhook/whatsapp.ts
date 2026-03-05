@@ -77,17 +77,79 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       telefone = remoteJid.replace('@s.whatsapp.net', '');
-      const msg = payload.data.message;
+
+      // Desempacotar mensagem — Evolution API v2 pode encapsular em viewOnceMessage
+      let msg = payload.data.message;
+      if (msg.viewOnceMessage?.message) {
+        msg = msg.viewOnceMessage.message;
+      }
+      if (msg.ephemeralMessage?.message) {
+        msg = msg.ephemeralMessage.message;
+      }
+      if (msg.documentWithCaptionMessage?.message) {
+        msg = msg.documentWithCaptionMessage.message;
+      }
+
+      // Log para debug de formatos de mensagem recebida
+      const msgKeys = Object.keys(msg);
+      console.log(`[Webhook] Msg keys: ${msgKeys.join(', ')} | fromMe: ${payload.data?.key?.fromMe}`);
+
+      // Texto básico
       texto = msg.conversation || msg.extendedTextMessage?.text || msg.imageMessage?.caption || msg.videoMessage?.caption || '';
 
+      // === FORMATOS DE RESPOSTA DE BOTÃO (Evolution API v2) ===
+
+      // 1) buttonsResponseMessage (botões antigos/legacy)
       if (msg.buttonsResponseMessage) {
         buttonId = msg.buttonsResponseMessage.selectedButtonId || null;
         texto = msg.buttonsResponseMessage.selectedDisplayText || texto;
       }
+
+      // 2) listResponseMessage (resposta de lista)
       if (msg.listResponseMessage) {
         buttonId = msg.listResponseMessage.singleSelectReply?.selectedRowId || null;
         texto = msg.listResponseMessage.title || texto;
       }
+
+      // 3) templateButtonReplyMessage (botões de template)
+      if (msg.templateButtonReplyMessage) {
+        buttonId = msg.templateButtonReplyMessage.selectedId || null;
+        texto = msg.templateButtonReplyMessage.selectedDisplayText || texto;
+      }
+
+      // 4) interactiveResponseMessage (nativeFlow buttons — Evolution API v2.x)
+      if (msg.interactiveResponseMessage) {
+        try {
+          const nativeBody = msg.interactiveResponseMessage.nativeFlowResponseMessage;
+          if (nativeBody) {
+            const paramsJson = nativeBody.paramsJson;
+            if (paramsJson) {
+              const parsed = JSON.parse(paramsJson);
+              buttonId = parsed.id || null;
+              texto = parsed.display_text || parsed.text || texto;
+            }
+            // Fallback: verificar selectedIndex
+            if (!buttonId && nativeBody.name === 'quick_reply') {
+              buttonId = nativeBody.selectedButtonId || null;
+            }
+          }
+          // Fallback: body.text do interactiveResponseMessage
+          if (!buttonId && msg.interactiveResponseMessage.body?.text) {
+            texto = msg.interactiveResponseMessage.body.text;
+          }
+        } catch (e) {
+          console.error('[Webhook] Erro ao parsear interactiveResponseMessage:', e);
+        }
+      }
+
+      // 5) interactiveMessage com body (pode ser resposta direta em algumas versões)
+      if (!buttonId && !texto && msg.interactiveMessage?.body?.text) {
+        texto = msg.interactiveMessage.body.text;
+      }
+
+      // Log resultado do parse
+      console.log(`[Webhook] Parse result: tel=${telefone} | texto="${texto?.substring(0,50)}" | buttonId=${buttonId}`);
+
     } else if (payload.telefone && payload.mensagem) {
       telefone = payload.telefone;
       texto = payload.mensagem;
