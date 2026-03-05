@@ -54,9 +54,39 @@ const BOTOES_ETAPA = {
 const ETAPAS_TERMINAIS = ['msg3a', 'msg3c', 'msg2b_fim', 'atendimento_manual', 'bloqueado'];
 
 const REGEX_BLOQUEIO = /\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remover|cancelar|nao me mande|pare de|nao quero mais|me tire|me remove|stop)\b/;
-const PALAVRAS_OPCAO_1 = /\b(sim|quero|contratar|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado)\b/;
-const PALAVRAS_OPCAO_2 = /\b(tenho site|ja tenho|duvida|pergunta|algumas|como funciona|explica|informacoes|saber mais|me conta|fala mais|parcial|algumas coisas)\b/;
-const PALAVRAS_OPCAO_3 = /\b(agora nao|pensar|depois|nao|talvez|mais tarde|nao quero|obrigado|valeu|sem interesse|nao preciso|vou pensar|nao agora)\b/;
+
+// Palavras-chave por intenção — POR ETAPA (corrige falsos positivos)
+const SEMANTICA_POR_ETAPA = {
+  // msg1: 1=Quero conhecer, 2=Já tenho site, 3=Agora não
+  msg1: [
+    { regex: /\b(sim|quero|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado|como funciona|me conta|fala mais|saber mais|explica|informacoes)\b/, opcao: 1 },
+    { regex: /\b(tenho site|ja tenho|meu site|nosso site|temos site)\b/, opcao: 2 },
+    { regex: /\b(agora nao|nao|depois|talvez|mais tarde|nao quero|obrigado|valeu|sem interesse|nao preciso|vou pensar|nao agora)\b/, opcao: 3 },
+  ],
+  // msg2: 1=Quero contratar, 2=Tenho dúvidas, 3=Vou pensar
+  msg2: [
+    { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|massa|legal)\b/, opcao: 1 },
+    { regex: /\b(duvida|pergunta|como funciona|explica|saber mais|me conta|fala mais|informacoes)\b/, opcao: 2 },
+    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao sei)\b/, opcao: 3 },
+  ],
+  // msg2b: 1=Tem tudo, 2=Tem algumas coisas, 3=Não tem
+  msg2b: [
+    { regex: /\b(sim|tudo|completo|tem sim|tenho tudo)\b/, opcao: 1 },
+    { regex: /\b(parcial|algumas|algumas coisas|parte|mais ou menos|nem tudo)\b/, opcao: 2 },
+    { regex: /\b(nao|nao tem|nenhum|nada|me conta|quero saber)\b/, opcao: 3 },
+  ],
+  // msg3b: 1=Quero contratar, 2=Mais dúvidas, 3=Vou pensar
+  msg3b: [
+    { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top)\b/, opcao: 1 },
+    { regex: /\b(duvida|pergunta|como funciona|explica|saber mais|outra)\b/, opcao: 2 },
+    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa)\b/, opcao: 3 },
+  ],
+  // msg3b_repeat: 1=Quero contratar, 2=Vou pensar
+  msg3b_repeat: [
+    { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top)\b/, opcao: 1 },
+    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao|obrigado|valeu)\b/, opcao: 2 },
+  ],
+};
 
 /**
  * Resolve um número para buttonId via MAPA_NUMERICO
@@ -133,14 +163,26 @@ function detectarResposta(texto, etapaAtual, buttonId) {
     }
   }
 
-  // 5) SEMÂNTICA
-  const m1 = PALAVRAS_OPCAO_1.test(t);
-  const m2 = PALAVRAS_OPCAO_2.test(t);
-  const m3 = PALAVRAS_OPCAO_3.test(t);
-
-  if (m1 && !m3) { const r = resolverPorNumero(1, etapaAtual); if (r) return r; }
-  if (m2 && !m1 && !m3) { const r = resolverPorNumero(2, etapaAtual); if (r) return r; }
-  if (m3 && !m1) { const r = resolverPorNumero(3, etapaAtual); if (r) return r; }
+  // 5) SEMÂNTICA POR ETAPA
+  const semanticaEtapa = SEMANTICA_POR_ETAPA[etapaAtual];
+  if (semanticaEtapa) {
+    const matches = semanticaEtapa.filter(s => s.regex.test(t));
+    if (matches.length === 1) {
+      const r = resolverPorNumero(matches[0].opcao, etapaAtual);
+      if (r) {
+        logger.info('Semântica por etapa', { etapa: etapaAtual, opcao: matches[0].opcao, texto: t.substring(0, 30) });
+        return r;
+      }
+    } else if (matches.length > 1) {
+      const temPositivo = matches.some(m => m.opcao === 1);
+      const temNegativo = matches.some(m => m.opcao === 3 || m.opcao === 2);
+      if (temPositivo && !temNegativo) {
+        const r = resolverPorNumero(1, etapaAtual);
+        if (r) return r;
+      }
+      logger.info('Semântica ambígua', { opcoes: matches.map(m => m.opcao), texto: t.substring(0, 30) });
+    }
+  }
 
   // 6) FALLBACK
   if (ETAPAS_TERMINAIS.includes(etapaAtual)) {

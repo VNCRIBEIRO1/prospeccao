@@ -18,10 +18,39 @@ const ETAPAS_TERMINAIS = ['msg3a', 'msg3c', 'msg2b_fim', 'atendimento_manual', '
 // Palavras que bloqueiam o bot imediatamente
 const REGEX_BLOQUEIO = /\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remover|cancelar|nao me mande|pare de|nao quero mais|me tire|me remove|stop)\b/;
 
-// Palavras-chave por intenção (usadas como fallback quando botões falham)
-const PALAVRAS_OPCAO_1 = /\b(sim|quero|contratar|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado)\b/;
-const PALAVRAS_OPCAO_2 = /\b(tenho site|ja tenho|duvida|pergunta|algumas|como funciona|explica|informacoes|saber mais|me conta|fala mais|parcial|algumas coisas)\b/;
-const PALAVRAS_OPCAO_3 = /\b(agora nao|pensar|depois|nao|talvez|mais tarde|nao quero|obrigado|valeu|sem interesse|nao preciso|vou pensar|nao agora)\b/;
+// Palavras-chave por intenção — POR ETAPA (corrige falsos positivos)
+// Cada etapa tem mapeamento específico: regex → número da opção
+const SEMANTICA_POR_ETAPA: Record<string, Array<{ regex: RegExp; opcao: number }>> = {
+  // msg1: 1=Quero conhecer, 2=Já tenho site, 3=Agora não
+  msg1: [
+    { regex: /\b(sim|quero|conhecer|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|boa|massa|legal|interesse|interessado|como funciona|me conta|fala mais|saber mais|explica|informacoes)\b/, opcao: 1 },
+    { regex: /\b(tenho site|ja tenho|meu site|nosso site|temos site)\b/, opcao: 2 },
+    { regex: /\b(agora nao|nao|depois|talvez|mais tarde|nao quero|obrigado|valeu|sem interesse|nao preciso|vou pensar|nao agora)\b/, opcao: 3 },
+  ],
+  // msg2: 1=Quero contratar, 2=Tenho dúvidas, 3=Vou pensar
+  msg2: [
+    { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top|massa|legal)\b/, opcao: 1 },
+    { regex: /\b(duvida|pergunta|como funciona|explica|saber mais|me conta|fala mais|informacoes)\b/, opcao: 2 },
+    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao sei)\b/, opcao: 3 },
+  ],
+  // msg2b: 1=Tem tudo, 2=Tem algumas coisas, 3=Não tem
+  msg2b: [
+    { regex: /\b(sim|tudo|completo|tem sim|tenho tudo)\b/, opcao: 1 },
+    { regex: /\b(parcial|algumas|algumas coisas|parte|mais ou menos|nem tudo)\b/, opcao: 2 },
+    { regex: /\b(nao|nao tem|nenhum|nada|me conta|quero saber)\b/, opcao: 3 },
+  ],
+  // msg3b: 1=Quero contratar, 2=Mais dúvidas, 3=Vou pensar
+  msg3b: [
+    { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top)\b/, opcao: 1 },
+    { regex: /\b(duvida|pergunta|como funciona|explica|saber mais|outra)\b/, opcao: 2 },
+    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa)\b/, opcao: 3 },
+  ],
+  // msg3b_repeat: 1=Quero contratar, 2=Vou pensar
+  msg3b_repeat: [
+    { regex: /\b(sim|quero|contratar|aceito|bora|vamos|claro|com certeza|fechado|fechar|vamo|manda|pode|show|top)\b/, opcao: 1 },
+    { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao|obrigado|valeu)\b/, opcao: 2 },
+  ],
+};
 
 /**
  * Detecta a intenção do usuário e retorna a próxima etapa do fluxo.
@@ -123,31 +152,34 @@ export function detectarResposta(
   }
 
   // ════════════════════════════════════════
-  // 5) ANÁLISE SEMÂNTICA — Palavras-chave genéricas
+  // 5) ANÁLISE SEMÂNTICA — Palavras-chave POR ETAPA
+  //    Cada etapa tem seus próprios mapeamentos de intenção
   // ════════════════════════════════════════
-  const matchOpc1 = PALAVRAS_OPCAO_1.test(t);
-  const matchOpc2 = PALAVRAS_OPCAO_2.test(t);
-  const matchOpc3 = PALAVRAS_OPCAO_3.test(t);
+  const semanticaEtapa = SEMANTICA_POR_ETAPA[etapaAtual];
+  if (semanticaEtapa) {
+    // Encontrar todas as opções que deram match
+    const matches = semanticaEtapa.filter(s => s.regex.test(t));
 
-  if (matchOpc1 && !matchOpc3) {
-    const r = resolverPorNumero(1, etapaAtual);
-    if (r) {
-      console.log(`[Detector] 💬 Semântica opção 1: "${t.substring(0, 30)}"`);
-      return r;
-    }
-  }
-  if (matchOpc2 && !matchOpc1 && !matchOpc3) {
-    const r = resolverPorNumero(2, etapaAtual);
-    if (r) {
-      console.log(`[Detector] 💬 Semântica opção 2: "${t.substring(0, 30)}"`);
-      return r;
-    }
-  }
-  if (matchOpc3 && !matchOpc1) {
-    const r = resolverPorNumero(3, etapaAtual);
-    if (r) {
-      console.log(`[Detector] 💬 Semântica opção 3: "${t.substring(0, 30)}"`);
-      return r;
+    if (matches.length === 1) {
+      // Match único — confiável
+      const r = resolverPorNumero(matches[0].opcao, etapaAtual);
+      if (r) {
+        console.log(`[Detector] 💬 Semântica etapa ${etapaAtual} opção ${matches[0].opcao}: "${t.substring(0, 30)}"`);
+        return r;
+      }
+    } else if (matches.length > 1) {
+      // Múltiplos matches — priorizar opção 1 (positiva) se não conflita com opção 3 (negativa)
+      const temPositivo = matches.some(m => m.opcao === 1);
+      const temNegativo = matches.some(m => m.opcao === 3 || m.opcao === 2);
+      if (temPositivo && !temNegativo) {
+        const r = resolverPorNumero(1, etapaAtual);
+        if (r) {
+          console.log(`[Detector] 💬 Semântica conflito resolvido → opção 1: "${t.substring(0, 30)}"`);
+          return r;
+        }
+      }
+      // Se conflita, vai para fallback (reenviar opções)
+      console.log(`[Detector] ⚠️ Semântica ambígua (${matches.map(m => m.opcao).join(',')}): "${t.substring(0, 30)}"`);
     }
   }
 
