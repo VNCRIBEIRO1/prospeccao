@@ -1,5 +1,5 @@
 // ============================================
-// Rotas — Webhook (recebe mensagens + QR Code da Evolution API)
+// Rotas — Webhook (recebe mensagens do WPPConnect-Server)
 // ============================================
 const express = require('express');
 const router = express.Router();
@@ -15,37 +15,25 @@ const logger = require('../services/logger');
 let lastConnectionLog = 0;
 const CONNECTION_LOG_INTERVAL = 30000; // Log a cada 30s no máximo
 
-// POST — Webhook da Evolution API (recebe mensagens, QR Code, status)
+// POST — Webhook do WPPConnect-Server (recebe mensagens, QR Code, status)
 router.post('/whatsapp', async (req, res) => {
   try {
     const payload = req.body;
-    const event = payload.event || '';
 
-    // Debug: logar TODOS os eventos recebidos (para diagnóstico)
-    logger.info('🔔 Webhook evento', { event, dataKeys: Object.keys(payload.data || {}).join(',') });
-
-    // ============================================
-    // QRCODE_UPDATED — QR Code recebido via webhook
-    // ============================================
-    if (event === 'QRCODE_UPDATED' || event === 'qrcode.updated') {
-      logger.info('📱 Webhook QRCODE_UPDATED recebido');
-      armazenarQRCode(payload.data || payload);
-      return res.json({ status: 'qrcode_armazenado' });
-    }
+    // Debug: logar eventos recebidos
+    logger.info('🔔 Webhook evento', { event: payload.event || 'onMessage', type: payload.type || 'unknown' });
 
     // ============================================
-    // CONNECTION_UPDATE — Status de conexão (com throttle)
+    // Status de conexão (WPPConnect status-find)
     // ============================================
-    if (event === 'CONNECTION_UPDATE' || event === 'connection.update') {
-      const state = payload.data?.state || payload.data?.instance?.state || 'unknown';
+    if (payload.event === 'status-find' || (payload.status && !payload.from)) {
+      const state = payload.status || payload.state || 'unknown';
       const now = Date.now();
 
-      // Se conectou, limpar QR e logar sempre
-      if (state === 'open') {
+      if (state === 'CONNECTED' || state === 'isLogged') {
         limparQRCodeCache();
         logger.info('✅ WhatsApp conectado!', { state });
       } else if (now - lastConnectionLog > CONNECTION_LOG_INTERVAL) {
-        // Outros estados: logar no máximo 1x a cada 30s
         lastConnectionLog = now;
         logger.debug('Conexão WhatsApp', { state });
       }
@@ -54,40 +42,51 @@ router.post('/whatsapp', async (req, res) => {
     }
 
     // ============================================
-    // MESSAGES_UPSERT — Mensagem recebida
+    // QR Code (WPPConnect qrcode event)
     // ============================================
-    // Extrair dados da mensagem (Evolution API format)
+    if (payload.event === 'qrcode' || payload.qrcode) {
+      logger.info('📱 Webhook QR Code recebido');
+      armazenarQRCode(payload);
+      return res.json({ status: 'qrcode_armazenado' });
+    }
+
+    // ============================================
+    // onMessage — Mensagem recebida (WPPConnect format)
+    // Formato: { from, body, type, fromMe, chatId, ... }
+    // ============================================
     let telefone, texto, buttonId = null;
 
-    if (payload.data?.message) {
-      // Formato Evolution API v2
-      const remoteJid = payload.data.key?.remoteJid || '';
+    if (payload.from || payload.chatId) {
+      // Formato WPPConnect
+      const from = payload.from || payload.chatId || '';
 
       // 🚫 Ignorar mensagens de GRUPOS (@g.us) e STATUS (@broadcast)
-      if (remoteJid.endsWith('@g.us') || remoteJid.includes('@broadcast')) {
+      if (from.endsWith('@g.us') || from.includes('broadcast') || from.includes('status')) {
         return res.json({ status: 'ignorado', motivo: 'mensagem_de_grupo_ou_broadcast' });
       }
 
-      telefone = remoteJid.replace('@s.whatsapp.net', '');
+      // Ignorar mensagens do próprio bot
+      if (payload.fromMe === true) {
+        return res.json({ status: 'ignorado', motivo: 'mensagem_propria' });
+      }
 
-      // Extrair texto de diferentes tipos de mensagem
-      const msg = payload.data.message;
-      texto = msg.conversation ||
-        msg.extendedTextMessage?.text ||
-        msg.imageMessage?.caption ||
-        msg.videoMessage?.caption || '';
+      // Extrair telefone (5518996311933@c.us → 5518996311933)
+      telefone = from.replace('@c.us', '').replace('@s.whatsapp.net', '');
 
-      // 🔘 Detectar clique em BOTÃO interativo
-      if (msg.buttonsResponseMessage) {
-        buttonId = msg.buttonsResponseMessage.selectedButtonId || null;
-        texto = msg.buttonsResponseMessage.selectedDisplayText || texto;
+      // Extrair texto
+      texto = payload.body || payload.content || payload.caption || '';
+
+      // 🔘 Detectar clique em BOTÃO interativo (WPPConnect)
+      if (payload.type === 'buttons_response') {
+        buttonId = payload.selectedButtonId || payload.buttonId || null;
+        texto = payload.selectedDisplayText || payload.body || texto;
         logger.info('🔘 Botão clicado', { buttonId, texto: texto.substring(0, 50) });
       }
 
-      // 📋 Detectar seleção em LISTA interativa
-      if (msg.listResponseMessage) {
-        buttonId = msg.listResponseMessage.singleSelectReply?.selectedRowId || null;
-        texto = msg.listResponseMessage.title || texto;
+      // 📋 Detectar seleção em LISTA interativa (WPPConnect)
+      if (payload.type === 'list_response') {
+        buttonId = payload.listResponse?.singleSelectReply?.selectedRowId || payload.selectedRowId || null;
+        texto = payload.listResponse?.title || payload.body || texto;
         logger.info('📋 Lista selecionada', { buttonId, texto: texto.substring(0, 50) });
       }
 
@@ -98,12 +97,7 @@ router.post('/whatsapp', async (req, res) => {
       buttonId = payload.buttonId || null;
     } else {
       // Evento que não é mensagem e não é QR/connection
-      return res.json({ status: 'ignorado', motivo: 'evento_nao_tratado', event });
-    }
-
-    // Ignorar mensagens do próprio bot
-    if (payload.data?.key?.fromMe) {
-      return res.json({ status: 'ignorado', motivo: 'mensagem_propria' });
+      return res.json({ status: 'ignorado', motivo: 'evento_nao_tratado', event: payload.event || 'unknown' });
     }
 
     // Ignorar se não tem texto
@@ -159,7 +153,6 @@ router.post('/whatsapp', async (req, res) => {
     const resultado = detectarResposta(texto, contato.etapaBot, buttonId);
 
     if (!resultado.proximaEtapa || resultado.acao === 'manual') {
-      // Atendimento manual — não responde automaticamente
       logger.info('Conversa encaminhada para atendimento manual', { contatoId: contato.id });
       return res.json({
         status: 'manual',
@@ -183,13 +176,12 @@ router.post('/whatsapp', async (req, res) => {
       const msgInvalida = gerarMensagemOpcaoInvalida(contato.etapaBot);
       if (msgInvalida) {
         const botoesEtapa = BOTOES[contato.etapaBot] || null;
-        // Enviar mensagem de "opção inválida" com botões (se disponíveis)
+        // Enviar mensagem de "opção inválida" com botões (WPPConnect suporta!)
         if (botoesEtapa) {
           await enviarMensagemComBotoes(contato.telefone, msgInvalida, botoesEtapa, 'Escolha uma opção 👆');
         } else {
           await enviarMensagem(contato.telefone, msgInvalida);
         }
-        // Registrar a tentativa
         await prisma.mensagem.create({
           data: {
             contatoId: contato.id,
@@ -210,7 +202,7 @@ router.post('/whatsapp', async (req, res) => {
     // Atualizar status e etapa do contato
     const updateData = { etapaBot: resultado.proximaEtapa };
     if (resultado.novoStatus) updateData.status = resultado.novoStatus;
-    updateData.tentativasSemResposta = 0; // Resetar contador pois respondeu
+    updateData.tentativasSemResposta = 0;
 
     await prisma.contato.update({
       where: { id: contato.id },
@@ -226,7 +218,6 @@ router.post('/whatsapp', async (req, res) => {
 
     // Se é lead quente — notificar + criar lead
     if (resultado.acao === 'enviar_msg3a_notificar') {
-      // Criar lead no pipeline
       const leadExistente = await prisma.lead.findFirst({
         where: { contatoId: contato.id }
       });
@@ -246,7 +237,6 @@ router.post('/whatsapp', async (req, res) => {
         });
       }
 
-      // Notificar via Telegram
       const contatoCompleto = await prisma.contato.findUnique({ where: { id: contato.id } });
       await notificarLeadQuente(contatoCompleto);
     }
@@ -257,7 +247,6 @@ router.post('/whatsapp', async (req, res) => {
         where: { id: contato.id },
         data: { status: 'pendente_followup' }
       });
-      // O follow-up será gerenciado pelo n8n (schedule node)
     }
 
     res.json({

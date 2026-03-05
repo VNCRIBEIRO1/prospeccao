@@ -104,7 +104,7 @@ app.listen(PORT, async () => {
     logger.warn('⚠️ Scheduler não inicializado', { error: err.message });
   }
 
-  // Auto-configurar webhook na Evolution API (aguarda 5s para o container estar pronto)
+  // Auto-configurar webhook no WPPConnect (aguarda 5s para o container estar pronto)
   setTimeout(async () => {
     try {
       const status = await verificarConexao();
@@ -114,7 +114,7 @@ app.listen(PORT, async () => {
           logger.info('🔗 Webhook auto-configurado no startup');
         }
       } else {
-        logger.warn('⚠️ Evolution API não acessível — webhook será configurado quando conectar');
+        logger.warn('⚠️ WPPConnect não acessível — webhook será configurado quando conectar');
       }
     } catch (err) {
       logger.warn('⚠️ Falha ao auto-configurar webhook', { error: err.message });

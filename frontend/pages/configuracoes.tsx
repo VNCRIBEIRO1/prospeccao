@@ -93,7 +93,7 @@ export default function Configuracoes() {
       }
 
       if (data.sucesso) {
-        // Evolution API v2: QR Code é entregue via webhook QRCODE_UPDATED
+        // WPPConnect: QR Code é obtido via qrcode-session ou webhook
         // Iniciar polling no endpoint GET /whatsapp/qrcode
         if (data.pairingCode) {
           toast.success(`📱 Código de pareamento: ${data.pairingCode}`);
@@ -432,11 +432,11 @@ export default function Configuracoes() {
         {/* SEÇÃO 2: CONFIGURAÇÕES DA API */}
         {/* ============================================ */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">🔧 Evolution API</h2>
+          <h2 className="text-lg font-semibold text-white mb-4">🔧 WPPConnect-Server</h2>
           <div className="space-y-4">
             {[
-              { chave: 'EVOLUTION_API_URL', label: 'URL da Evolution API', placeholder: 'http://localhost:8080' },
-              { chave: 'EVOLUTION_API_KEY', label: 'API Key', placeholder: 'minha-chave-secreta', type: 'password' },
+              { chave: 'WPPCONNECT_URL', label: 'URL do WPPConnect', placeholder: 'http://localhost:21465' },
+              { chave: 'WPPCONNECT_SECRET_KEY', label: 'Secret Key', placeholder: 'prospeccao-secret-2024', type: 'password' },
             ].map((field) => (
               <div key={field.chave} className="flex gap-3 items-end">
                 <div className="flex-1">

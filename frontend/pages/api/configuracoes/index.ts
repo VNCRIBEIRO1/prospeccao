@@ -9,9 +9,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const configMap: Record<string, string> = {};
       configs.forEach((c) => { configMap[c.chave] = c.valor; });
 
-      configMap.EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || '';
-      configMap.EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY ? '***configurado***' : '';
-      configMap.EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'prospeccao';
+      configMap.WPPCONNECT_URL = process.env.WPPCONNECT_URL || '';
+      configMap.WPPCONNECT_SECRET_KEY = process.env.WPPCONNECT_SECRET_KEY ? '***configurado***' : '';
+      configMap.WPPCONNECT_SESSION = process.env.WPPCONNECT_SESSION || 'prospeccao';
       configMap.TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ? '***configurado***' : '';
       configMap.TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 

@@ -4,7 +4,7 @@ echo   PROSPECCAO - Iniciando Servicos
 echo ============================================
 echo.
 
-:: 1) Docker (Evolution API, Redis, Postgres)
+:: 1) Docker (WPPConnect, Redis, n8n)
 echo [1/3] Verificando Docker...
 docker info >nul 2>&1
 if errorlevel 1 (
@@ -22,13 +22,13 @@ if errorlevel 1 (
 echo [1/3] Docker OK
 echo.
 
-:: 2) Aguardar Evolution API
-echo [2/3] Aguardando Evolution API (porta 8080)...
-:wait_evolution
-timeout /t 2 /nobreak >nul
-curl -s -o nul http://localhost:8080/instance/fetchInstances 2>nul
-if errorlevel 1 goto wait_evolution
-echo [2/3] Evolution API OK
+:: 2) Aguardar WPPConnect-Server
+echo [2/3] Aguardando WPPConnect-Server (porta 21465)...
+:wait_wppconnect
+timeout /t 3 /nobreak >nul
+curl -s -o nul http://localhost:21465/api/health 2>nul
+if errorlevel 1 goto wait_wppconnect
+echo [2/3] WPPConnect-Server OK
 echo.
 
 :: 3) Next.js Frontend
@@ -56,9 +56,9 @@ echo ============================================
 echo   TUDO PRONTO!
 echo ============================================
 echo.
-echo   Frontend:      http://localhost:3000
-echo   Evolution API: http://localhost:8080
-echo   n8n:           http://localhost:5678
+echo   Frontend:        http://localhost:3000
+echo   WPPConnect:      http://localhost:21465
+echo   n8n:             http://localhost:5678
 echo.
 echo   Abra o navegador em http://localhost:3000
 echo ============================================

@@ -1,29 +1,60 @@
 // ============================================
-// Evolution API — Integração com WhatsApp
-// Evolution API v2: QR Code é entregue via webhook QRCODE_UPDATED
+// WPPConnect-Server — Integração com WhatsApp
+// Migrado de Evolution API → WPPConnect (definitivo)
 // ============================================
 const axios = require('axios');
 const logger = require('./logger');
 
-const EVOLUTION_URL = process.env.EVOLUTION_API_URL || 'http://localhost:8080';
-const EVOLUTION_KEY = process.env.EVOLUTION_API_KEY || 'minha-chave-secreta';
-const INSTANCE = process.env.EVOLUTION_INSTANCE || 'prospeccao';
+const WPPCONNECT_URL = process.env.WPPCONNECT_URL || 'http://localhost:21465';
+const WPPCONNECT_SECRET = process.env.WPPCONNECT_SECRET_KEY || 'prospeccao-secret-2024';
+const SESSION = process.env.WPPCONNECT_SESSION || 'prospeccao';
 
 // URL do backend acessível pelo Docker (host.docker.internal no Windows/Mac)
 const BACKEND_HOST = process.env.BACKEND_HOST || 'host.docker.internal';
 const BACKEND_PORT = process.env.PORT || 3001;
 
-const api = axios.create({
-  baseURL: EVOLUTION_URL,
-  headers: {
-    'Content-Type': 'application/json',
-    'apikey': EVOLUTION_KEY
-  },
-  timeout: 30000
-});
+// Token cache — Bearer token para autenticação
+let tokenCache = { token: null, timestamp: null };
+
+async function obterToken() {
+  // Token válido por 1 hora
+  if (tokenCache.token && tokenCache.timestamp && Date.now() - tokenCache.timestamp < 3600000) {
+    return tokenCache.token;
+  }
+
+  try {
+    const response = await axios.post(
+      `${WPPCONNECT_URL}/api/${SESSION}/${WPPCONNECT_SECRET}/generate-token`,
+      {},
+      { timeout: 10000 }
+    );
+    const token = response.data?.token;
+    if (token) {
+      tokenCache = { token, timestamp: Date.now() };
+      logger.info('🔑 Token WPPConnect gerado com sucesso');
+      return token;
+    }
+    throw new Error('Token não retornado pelo WPPConnect');
+  } catch (error) {
+    logger.error('Erro ao gerar token WPPConnect', { erro: error.message });
+    throw error;
+  }
+}
+
+async function getApi() {
+  const token = await obterToken();
+  return axios.create({
+    baseURL: `${WPPCONNECT_URL}/api/${SESSION}`,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    timeout: 30000
+  });
+}
 
 // ============================================
-// Cache do QR Code (recebido via webhook)
+// Cache do QR Code
 // ============================================
 let qrCodeCache = {
   base64: null,
@@ -34,7 +65,7 @@ let qrCodeCache = {
 };
 
 /**
- * Armazena QR Code recebido via webhook (QRCODE_UPDATED)
+ * Armazena QR Code recebido via webhook ou polling
  */
 function armazenarQRCode(data) {
   const base64 = data?.qrcode?.base64 || data?.base64 || data?.qrcode || null;
@@ -45,7 +76,7 @@ function armazenarQRCode(data) {
     timestamp: Date.now(),
     count: (qrCodeCache.count || 0) + 1
   };
-  logger.info('📱 QR Code armazenado via webhook', {
+  logger.info('📱 QR Code armazenado', {
     hasBase64: !!qrCodeCache.base64,
     base64Length: qrCodeCache.base64?.length || 0,
     count: qrCodeCache.count
@@ -59,28 +90,28 @@ function obterQRCodeCache() {
   if (!qrCodeCache.base64 && !qrCodeCache.pairingCode) {
     return null;
   }
-  // QR Code expira em 60 segundos
   const expirado = qrCodeCache.timestamp && (Date.now() - qrCodeCache.timestamp > 60000);
   return { ...qrCodeCache, expirado: !!expirado };
 }
 
 /**
- * Limpar cache do QR Code (quando conectou ou desconectou)
+ * Limpar cache do QR Code
  */
 function limparQRCodeCache() {
   qrCodeCache = { base64: null, pairingCode: null, code: null, timestamp: null, count: 0 };
 }
 
 /**
- * Envia mensagem de texto via Evolution API
+ * Envia mensagem de texto via WPPConnect
  */
 async function enviarMensagem(telefone, texto) {
   try {
     const numero = formatarTelefone(telefone);
+    const api = await getApi();
 
-    const response = await api.post(`/message/sendText/${INSTANCE}`, {
-      number: numero,
-      text: texto
+    const response = await api.post('/send-message', {
+      phone: numero,
+      message: texto
     });
 
     logger.info('Mensagem enviada com sucesso', { telefone: numero });
@@ -95,106 +126,66 @@ async function enviarMensagem(telefone, texto) {
 }
 
 /**
- * Iniciar conexão do WhatsApp (gera QR Code via webhook)
- * Evolution API v2: o QR Code é enviado via webhook QRCODE_UPDATED
- * O endpoint /instance/connect retorna pairingCode (código numérico)
+ * Iniciar conexão do WhatsApp (gera QR Code)
  */
 async function iniciarConexao() {
   try {
-    // Verificar se já conectado
     const status = await verificarConexao();
     if (status.conectado) {
       return { sucesso: true, conectado: true, mensagem: 'Já conectado' };
     }
 
-    // Limpar QR Code antigo
     limparQRCodeCache();
 
-    // Verificar se instância existe
-    let instanciaExiste = false;
+    // WPPConnect: start-session cria e conecta automaticamente
     try {
-      const instances = await api.get('/instance/fetchInstances');
-      instanciaExiste = instances.data?.some(i =>
-        i.name === INSTANCE || i.instance?.instanceName === INSTANCE
+      const token = await obterToken();
+      await axios.post(
+        `${WPPCONNECT_URL}/api/${SESSION}/start-session`,
+        {},
+        {
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          timeout: 30000
+        }
       );
+      logger.info('Sessão WPPConnect iniciada');
     } catch (e) {
-      logger.debug('Erro ao buscar instâncias', { erro: e.message });
-    }
-
-    // Se a instância está presa em "connecting", fazer logout para resetar
-    if (instanciaExiste) {
-      try {
-        const state = await api.get(`/instance/connectionState/${INSTANCE}`);
-        const currentState = state.data?.instance?.state || state.data?.state;
-        if (currentState === 'connecting') {
-          logger.info('Instância presa em connecting, fazendo logout para resetar...');
-          try { await api.delete(`/instance/logout/${INSTANCE}`); } catch (e) {}
-          await new Promise(r => setTimeout(r, 3000));
-        }
-      } catch (e) {}
-    }
-
-    // Se instância não existe, criar
-    if (!instanciaExiste) {
-      try {
-        const createResponse = await api.post('/instance/create', {
-          instanceName: INSTANCE,
-          qrcode: true,
-          integration: 'WHATSAPP-BAILEYS'
-        });
-        logger.info('Instância criada', { instance: INSTANCE });
-
-        // Se create retornou QR Code, armazenar
-        const qrFromCreate = createResponse.data?.qrcode?.base64 || createResponse.data?.base64;
-        if (qrFromCreate && qrFromCreate.length > 20) {
-          armazenarQRCode({ base64: qrFromCreate });
-        }
-
-        // Aguardar um pouco para instância inicializar
-        await new Promise(r => setTimeout(r, 2000));
-      } catch (e) {
-        // 403 = instância já existe, OK
-        if (e.response?.status !== 403) {
-          logger.error('Erro ao criar instância', { erro: e.message });
-        }
+      if (!e.response?.data?.message?.includes('already')) {
+        logger.error('Erro ao iniciar sessão', { erro: e.message });
       }
     }
 
-    // Configurar webhook ANTES de conectar (para receber QRCODE_UPDATED)
-    await autoConfigurarWebhook();
-    await new Promise(r => setTimeout(r, 1000));
+    // Aguardar QR Code ser gerado
+    await new Promise(r => setTimeout(r, 3000));
 
-    // Conectar instância — retorna pairingCode (não QR base64)
-    // O QR Code base64 será enviado via webhook QRCODE_UPDATED
+    // Buscar QR Code
     try {
-      const response = await api.get(`/instance/connect/${INSTANCE}`);
-      const pairingCode = response.data?.pairingCode;
-      const code = response.data?.code;
-      const count = response.data?.count || 0;
-
-      if (pairingCode) {
-        qrCodeCache.pairingCode = pairingCode;
-        qrCodeCache.code = code;
-        qrCodeCache.timestamp = Date.now();
-        logger.info('Pairing code obtido', { pairingCode, count });
+      const api = await getApi();
+      const qrResponse = await api.get('/qrcode-session', { params: { image: true } });
+      const qrBase64 = qrResponse.data?.qrcode || qrResponse.data?.base64;
+      if (qrBase64 && typeof qrBase64 === 'string' && qrBase64.length > 50) {
+        armazenarQRCode({ base64: qrBase64 });
+        logger.info('QR Code obtido via qrcode-session');
+        return {
+          sucesso: true,
+          conectado: false,
+          qrCode: qrBase64,
+          aguardandoQR: true,
+          mensagem: 'QR Code gerado. Escaneie com o WhatsApp.'
+        };
       }
-
-      return {
-        sucesso: true,
-        conectado: false,
-        pairingCode: pairingCode || null,
-        aguardandoQR: true,
-        mensagem: 'Conexão iniciada. QR Code será gerado em instantes via webhook...'
-      };
     } catch (e) {
-      logger.error('Erro ao conectar instância', { erro: e.message });
-      return { sucesso: false, erro: e.message };
+      logger.debug('QR ainda não disponível', { erro: e.message });
     }
+
+    return {
+      sucesso: true,
+      conectado: false,
+      aguardandoQR: true,
+      mensagem: 'Conexão iniciada. QR Code será gerado em instantes...'
+    };
   } catch (error) {
-    logger.error('Erro ao iniciar conexão', {
-      erro: error.message,
-      response: error.response?.data
-    });
+    logger.error('Erro ao iniciar conexão', { erro: error.message });
     return { sucesso: false, erro: error.message };
   }
 }
@@ -211,11 +202,11 @@ async function obterQRCode() {
  */
 async function verificarConexao() {
   try {
-    const response = await api.get(`/instance/connectionState/${INSTANCE}`);
-    const state = response.data?.instance?.state || response.data?.state || 'unknown';
-    const conectado = state === 'open';
+    const api = await getApi();
+    const response = await api.get('/check-connection-session');
+    const status = response.data?.status;
+    const conectado = status === true || status === 'CONNECTED' || response.data?.message === 'Connected';
 
-    // Se conectou, limpar cache do QR
     if (conectado) {
       limparQRCodeCache();
     }
@@ -223,7 +214,7 @@ async function verificarConexao() {
     return {
       sucesso: true,
       conectado,
-      estado: state
+      estado: conectado ? 'open' : 'close'
     };
   } catch (error) {
     return { sucesso: false, conectado: false, estado: 'error' };
@@ -231,49 +222,23 @@ async function verificarConexao() {
 }
 
 /**
- * Configurar webhook para receber mensagens E QR Code
- * Usa host.docker.internal para que o Evolution API (Docker) alcance o backend (host)
- * IMPORTANTE: base64 = true para receber QR Code como base64 no webhook
- * (Evolution API usa 'base64' e NÃO 'webhook_base64' no payload)
+ * Configurar webhook — WPPConnect usa config.json, método mantido para compatibilidade
  */
 async function configurarWebhook(webhookUrl) {
-  try {
-    const url = webhookUrl || `http://${BACKEND_HOST}:${BACKEND_PORT}/api/webhook/whatsapp`;
-
-    const response = await api.post(`/webhook/set/${INSTANCE}`, {
-      webhook: {
-        enabled: true,
-        url,
-        webhook_by_events: false,
-        base64: true,
-        events: [
-          'QRCODE_UPDATED',
-          'CONNECTION_UPDATE',
-          'MESSAGES_UPSERT',
-          'MESSAGES_UPDATE'
-        ]
-      }
-    });
-    logger.info('Webhook configurado', { url });
-    return { sucesso: true, data: response.data, url };
-  } catch (error) {
-    logger.error('Erro ao configurar webhook', {
-      erro: error.message,
-      response: error.response?.data
-    });
-    return { sucesso: false, erro: error.message };
-  }
+  const url = webhookUrl || `http://${BACKEND_HOST}:${BACKEND_PORT}/api/webhook/whatsapp`;
+  logger.info('Webhook configurado via config.json', { url });
+  return { sucesso: true, data: { info: 'Webhook configurado via config.json do WPPConnect' }, url };
 }
 
 /**
- * Configurar webhook automaticamente (chamado no startup e antes de connect)
+ * Configurar webhook automaticamente
  */
 async function autoConfigurarWebhook() {
   try {
     const webhookUrl = `http://${BACKEND_HOST}:${BACKEND_PORT}/api/webhook/whatsapp`;
     const resultado = await configurarWebhook(webhookUrl);
     if (resultado.sucesso) {
-      logger.info('✅ Webhook auto-configurado com sucesso', { url: webhookUrl });
+      logger.info('✅ Webhook auto-configurado', { url: webhookUrl });
     }
     return resultado;
   } catch (error) {
@@ -287,8 +252,10 @@ async function autoConfigurarWebhook() {
  */
 async function desconectar() {
   try {
-    const response = await api.delete(`/instance/logout/${INSTANCE}`);
+    const api = await getApi();
+    const response = await api.post('/logout-session');
     limparQRCodeCache();
+    tokenCache = { token: null, timestamp: null };
     logger.info('WhatsApp desconectado');
     return { sucesso: true, data: response.data };
   } catch (error) {
@@ -298,35 +265,40 @@ async function desconectar() {
 }
 
 /**
- * Reiniciar instância — deleta e recria do zero
+ * Reiniciar sessão — logout + close
  */
 async function reiniciarInstancia() {
   try {
-    try { await api.delete(`/instance/logout/${INSTANCE}`); } catch (e) {}
+    try {
+      const api = await getApi();
+      await api.post('/logout-session');
+    } catch (e) {}
     await new Promise(r => setTimeout(r, 2000));
 
-    try { await api.delete(`/instance/delete/${INSTANCE}`); } catch (e) {}
+    try {
+      const api = await getApi();
+      await api.post('/close-session');
+    } catch (e) {}
     await new Promise(r => setTimeout(r, 2000));
 
     limparQRCodeCache();
-    logger.info('Instância reiniciada (deletada). Use "Conectar" para recriar.');
+    tokenCache = { token: null, timestamp: null };
+    logger.info('Sessão reiniciada (fechada). Use "Conectar" para recriar.');
     return { sucesso: true };
   } catch (error) {
-    logger.error('Erro ao reiniciar instância', { erro: error.message });
+    logger.error('Erro ao reiniciar sessão', { erro: error.message });
     return { sucesso: false, erro: error.message };
   }
 }
 
 /**
- * Obter informações da instância
+ * Obter informações da sessão
  */
 async function obterInfoInstancia() {
   try {
-    const response = await api.get(`/instance/fetchInstances`);
-    const instancia = response.data?.find(i =>
-      i.name === INSTANCE || i.instance?.instanceName === INSTANCE
-    );
-    return { sucesso: true, data: instancia || null };
+    const api = await getApi();
+    const response = await api.get('/check-connection-session');
+    return { sucesso: true, data: response.data || null };
   } catch (error) {
     return { sucesso: false, data: null, erro: error.message };
   }
@@ -344,30 +316,32 @@ function formatarTelefone(telefone) {
 }
 
 /**
- * Envia mensagem com botões interativos via Evolution API
+ * Envia mensagem com botões interativos via WPPConnect
+ * WPPConnect suporta botões nativos! 🎉
  * Tenta botões → lista → texto puro (fallback)
  */
 async function enviarMensagemComBotoes(telefone, texto, botoes, rodape) {
   const numero = formatarTelefone(telefone);
 
-  // 1) Tentar enviar como BOTÕES (max 3 botões)
-  if (botoes && botoes.length <= 3) {
+  // 1) Tentar enviar como BOTÕES nativos (max 3 botões)
+  if (botoes && botoes.length > 0 && botoes.length <= 3) {
     try {
-      const response = await api.post(`/message/sendButtons/${INSTANCE}`, {
-        number: numero,
-        title: '',
-        description: texto.length > 1024 ? texto.substring(0, 1020) + '...' : texto,
+      const api = await getApi();
+      const buttons = botoes.map(b => ({
+        id: b.id,
+        text: b.texto
+      }));
+
+      const response = await api.post('/send-buttons', {
+        phone: numero,
+        message: texto.length > 1024 ? texto.substring(0, 1020) + '...' : texto,
         footer: rodape || 'Toque em uma opção 👆',
-        buttons: botoes.map(b => ({
-          type: 'reply',
-          displayText: b.texto,
-          id: b.id
-        }))
+        buttons
       });
       logger.info('✅ Mensagem com BOTÕES enviada', { telefone: numero });
       return { sucesso: true, data: response.data, tipo: 'botoes' };
     } catch (btnErr) {
-      logger.debug('Botões não suportados, tentando lista...', {
+      logger.debug('Botões falharam, tentando lista...', {
         erro: btnErr.response?.status || btnErr.message
       });
     }
@@ -376,11 +350,10 @@ async function enviarMensagemComBotoes(telefone, texto, botoes, rodape) {
   // 2) Tentar enviar como LISTA interativa
   if (botoes && botoes.length > 0) {
     try {
-      const response = await api.post(`/message/sendList/${INSTANCE}`, {
-        number: numero,
-        title: 'Escolha uma opção',
+      const api = await getApi();
+      const response = await api.post('/send-list-message', {
+        phone: numero,
         description: texto.length > 1024 ? texto.substring(0, 1020) + '...' : texto,
-        footerText: rodape || 'Toque para ver opções 👆',
         buttonText: '📋 Ver opções',
         sections: [{
           title: 'Opções disponíveis',
@@ -394,7 +367,7 @@ async function enviarMensagemComBotoes(telefone, texto, botoes, rodape) {
       logger.info('✅ Mensagem com LISTA enviada', { telefone: numero });
       return { sucesso: true, data: response.data, tipo: 'lista' };
     } catch (listErr) {
-      logger.debug('Lista não suportada, enviando texto puro...', {
+      logger.debug('Lista falhou, enviando texto puro...', {
         erro: listErr.response?.status || listErr.message
       });
     }

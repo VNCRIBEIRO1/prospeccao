@@ -2,70 +2,40 @@ version: '3.8'
 
 services:
   # ============================================
-  # Evolution API — Conexão WhatsApp via QR Code
+  # WPPConnect-Server — Conexão WhatsApp via QR Code
   # ============================================
-  evolution-api:
-    image: evoapicloud/evolution-api:v2.3.7
-    container_name: evolution-api
+  wppconnect:
+    image: wppconnect/server-cli:latest
+    container_name: wppconnect-server
     restart: unless-stopped
+    command:
+      - --secretKey
+      - prospeccao-secret-2024
+      - --port
+      - "21465"
+      - --startAllSession
+      - --webhook-url
+      - http://host.docker.internal:3000/api/webhook/whatsapp
+      - --webhook-autoDownload
+      - --webhook-readMessage
+      - --no-webhook-onPresenceChanged
+      - --no-webhook-onParticipantsChanged
+      - --no-webhook-listenAcks
     ports:
-      - "8080:8080"
-    environment:
-      - SERVER_URL=http://localhost:8080
-      - AUTHENTICATION_API_KEY=minha-chave-secreta
-      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
-      - DATABASE_PROVIDER=postgresql
-      - DATABASE_ENABLED=true
-      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution123@postgres-evolution:5432/evolution
-      - DATABASE_SAVE_DATA_INSTANCE=true
-      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
-      - DATABASE_SAVE_MESSAGE_UPDATE=true
-      - DATABASE_SAVE_DATA_CONTACTS=true
-      - DATABASE_SAVE_DATA_CHATS=true
-      - DEL_INSTANCE=false
-      - QRCODE_LIMIT=30
-      - QRCODE_COLOR=#198754
-      - CACHE_REDIS_ENABLED=true
-      - CACHE_REDIS_URI=redis://redis:6379
-      - CACHE_REDIS_PREFIX_KEY=evolution
-      - CACHE_REDIS_SAVE_INSTANCES=false
-      - CACHE_LOCAL_ENABLED=false
-      - LOG_LEVEL=ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS
-      - LOG_BAILEYS=info
-      - LOG_COLOR=false
-    depends_on:
-      postgres-evolution:
-        condition: service_healthy
+      - "21465:21465"
     volumes:
-      - evolution_data:/evolution/instances
+      - wppconnect_tokens:/usr/src/wpp-server/tokens
+      - wppconnect_data:/usr/src/wpp-server/userDataDir
+    environment:
+      - TZ=America/Sao_Paulo
     networks:
       - prospeccao-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      test: ["CMD", "curl", "-f", "http://localhost:21465/api/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-
-  # ============================================
-  # PostgreSQL — Banco de dados para Evolution API
-  # ============================================
-  postgres-evolution:
-    image: postgres:15-alpine
-    container_name: postgres-evolution
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=evolution
-      - POSTGRES_PASSWORD=evolution123
-      - POSTGRES_DB=evolution
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - prospeccao-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U evolution"]
-      interval: 10s
-      timeout: 5s
       retries: 5
+      start_period: 30s
 
   # ============================================
   # n8n — Automação de fluxos
@@ -114,9 +84,9 @@ services:
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
 
 volumes:
-  evolution_data:
+  wppconnect_data:
     driver: local
-  postgres_data:
+  wppconnect_tokens:
     driver: local
   n8n_data:
     driver: local

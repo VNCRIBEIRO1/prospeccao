@@ -1,11 +1,11 @@
-// GET /api/configuracoes/whatsapp/qrcode — Get QR Code
+// GET /api/configuracoes/whatsapp/qrcode — Get QR Code (WPPConnect)
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { verificarConexao, obterQRCodeCache, armazenarQRCode } from '../../../../lib/evolution';
 import axios from 'axios';
 
-const EVOLUTION_URL = (process.env.EVOLUTION_API_URL || 'http://localhost:8080').trim();
-const EVOLUTION_KEY = (process.env.EVOLUTION_API_KEY || '').trim().replace(/[\r\n\t\x00-\x1F\x7F]+/g, '');
-const INSTANCE = (process.env.EVOLUTION_INSTANCE || 'prospeccao').trim();
+const WPPCONNECT_URL = (process.env.WPPCONNECT_URL || 'http://localhost:21465').trim();
+const WPPCONNECT_SECRET = (process.env.WPPCONNECT_SECRET_KEY || 'prospeccao-secret-2024').trim();
+const SESSION = (process.env.WPPCONNECT_SESSION || 'prospeccao').trim();
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
@@ -16,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.json({ sucesso: true, conectado: true });
     }
 
-    // 1) Tentar cache de memória (recebido via webhook)
+    // 1) Tentar cache de memória
     const qrCache = obterQRCodeCache();
     if (qrCache && qrCache.base64 && !qrCache.expirado) {
       return res.json({
@@ -29,42 +29,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    // 2) Fallback: buscar QR diretamente da Evolution API via connect
+    // 2) Fallback: buscar QR diretamente do WPPConnect via qrcode-session
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (EVOLUTION_KEY) headers['apikey'] = EVOLUTION_KEY;
+      // Primeiro obter token
+      const tokenRes = await axios.post(
+        `${WPPCONNECT_URL}/api/${SESSION}/${WPPCONNECT_SECRET}/generate-token`,
+        {},
+        { timeout: 10000 }
+      );
+      const token = tokenRes.data?.token;
 
-      const connectRes = await axios.get(`${EVOLUTION_URL}/instance/connect/${INSTANCE}`, {
-        headers,
-        timeout: 15000,
-      });
-      const data = connectRes.data;
-      const base64QR = data?.base64 || data?.qrcode?.base64;
-      const pairingCode = data?.pairingCode;
-
-      if (base64QR && typeof base64QR === 'string' && base64QR.length > 50) {
-        armazenarQRCode({ base64: base64QR, pairingCode, code: data?.code });
-        return res.json({
-          sucesso: true,
-          conectado: false,
-          qrCode: base64QR,
-          pairingCode: pairingCode || null,
-          count: 1,
-          expirado: false,
+      if (token) {
+        const qrRes = await axios.get(`${WPPCONNECT_URL}/api/${SESSION}/qrcode-session`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { image: true },
+          timeout: 15000,
         });
-      }
 
-      if (pairingCode) {
-        return res.json({
-          sucesso: true,
-          conectado: false,
-          qrCode: null,
-          pairingCode,
-          aguardando: false,
-        });
+        const qrBase64 = qrRes.data?.qrcode || qrRes.data?.base64;
+        if (qrBase64 && typeof qrBase64 === 'string' && qrBase64.length > 50) {
+          armazenarQRCode({ base64: qrBase64 });
+          return res.json({
+            sucesso: true,
+            conectado: false,
+            qrCode: qrBase64,
+            pairingCode: null,
+            count: 1,
+            expirado: false,
+          });
+        }
       }
     } catch (e: any) {
-      console.log(`[QR] Fallback connect falhou: ${e.message}`);
+      console.log(`[QR] Fallback WPPConnect falhou: ${e.message}`);
     }
 
     // 3) Sem QR disponível

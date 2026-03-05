@@ -1,9 +1,9 @@
-// POST /api/webhook/whatsapp — Webhook receiver from Evolution API
+// POST /api/webhook/whatsapp — Webhook receiver from WPPConnect-Server
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
 import { detectarResposta } from '../../../lib/detector';
-import { enviarMensagem, armazenarQRCode, limparQRCodeCache } from '../../../lib/evolution';
-import { MENSAGENS, gerarMensagemOpcaoInvalida } from '../../../lib/mensagens';
+import { enviarMensagem, enviarMensagemComBotoes, armazenarQRCode, limparQRCodeCache } from '../../../lib/evolution';
+import { MENSAGENS, BOTOES, gerarMensagemOpcaoInvalida } from '../../../lib/mensagens';
 import axios from 'axios';
 
 async function enviarMensagemBot(contatoId: number, etapa: string) {
@@ -13,8 +13,14 @@ async function enviarMensagemBot(contatoId: number, etapa: string) {
   const contato = await prisma.contato.findUnique({ where: { id: contatoId } });
   if (!contato) return { sucesso: false, erro: 'contato_nao_encontrado' };
 
-  // Sempre envia como texto puro — opcoes numeradas ja estao embutidas na mensagem
-  const resultado = await enviarMensagem(contato.telefone, mensagem);
+  // WPPConnect suporta botões nativos! Enviar com botões quando disponíveis
+  const botoesEtapa = BOTOES[etapa] || null;
+  let resultado;
+  if (botoesEtapa && botoesEtapa.length > 0) {
+    resultado = await enviarMensagemComBotoes(contato.telefone, mensagem, botoesEtapa, 'Escolha uma opção 👆');
+  } else {
+    resultado = await enviarMensagem(contato.telefone, mensagem);
+  }
 
   if (resultado.sucesso) {
     await prisma.mensagem.create({
@@ -45,115 +51,86 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const payload = req.body;
-    const event = payload.event || '';
 
-    // QRCODE_UPDATED
-    if (event === 'QRCODE_UPDATED' || event === 'qrcode.updated') {
-      armazenarQRCode(payload.data || payload);
-      return res.json({ status: 'qrcode_armazenado' });
-    }
+    // ============================================
+    // WPPConnect envia eventos com diferentes estruturas
+    // Detectar tipo de evento pelo payload
+    // ============================================
 
-    // CONNECTION_UPDATE
-    if (event === 'CONNECTION_UPDATE' || event === 'connection.update') {
-      const state = payload.data?.state || payload.data?.instance?.state || 'unknown';
-      if (state === 'open') limparQRCodeCache();
+    // Evento de status de conexão (onStateChange)
+    if (payload.event === 'status-find' || payload.status) {
+      const state = payload.status || payload.state || 'unknown';
+      if (state === 'CONNECTED' || state === 'isLogged') {
+        limparQRCodeCache();
+      }
       return res.json({ status: 'connection_update', state });
     }
 
-    // MESSAGES_UPSERT
+    // Evento de QR Code
+    if (payload.event === 'qrcode' || payload.qrcode) {
+      armazenarQRCode(payload);
+      return res.json({ status: 'qrcode_armazenado' });
+    }
+
+    // ============================================
+    // WPPConnect onMessage — Mensagem recebida
+    // Formato: { event: 'onMessage', session: '...', ...messageFields }
+    // Ou diretamente: { from, body, type, ... }
+    // ============================================
     let telefone: string = '';
     let texto: string = '';
     let buttonId: string | null = null;
 
-    if (payload.data?.message) {
-      const remoteJid = payload.data.key?.remoteJid || '';
-      if (remoteJid.endsWith('@g.us') || remoteJid.includes('@broadcast')) {
+    // WPPConnect message format
+    if (payload.from || payload.chatId || (payload.event === 'onMessage')) {
+      const from = payload.from || payload.chatId || '';
+
+      // Ignorar grupos e broadcast
+      if (from.endsWith('@g.us') || from.includes('broadcast') || from.includes('status')) {
         return res.json({ status: 'ignorado', motivo: 'mensagem_de_grupo_ou_broadcast' });
       }
 
-      telefone = remoteJid.replace('@s.whatsapp.net', '');
-
-      // Desempacotar mensagem — Evolution API v2 pode encapsular em viewOnceMessage
-      let msg = payload.data.message;
-      if (msg.viewOnceMessage?.message) {
-        msg = msg.viewOnceMessage.message;
-      }
-      if (msg.ephemeralMessage?.message) {
-        msg = msg.ephemeralMessage.message;
-      }
-      if (msg.documentWithCaptionMessage?.message) {
-        msg = msg.documentWithCaptionMessage.message;
+      // Ignorar mensagens do próprio bot
+      if (payload.fromMe === true) {
+        return res.json({ status: 'ignorado', motivo: 'mensagem_propria' });
       }
 
-      // Log para debug de formatos de mensagem recebida
-      const msgKeys = Object.keys(msg);
-      console.log(`[Webhook] Msg keys: ${msgKeys.join(', ')} | fromMe: ${payload.data?.key?.fromMe}`);
+      // Extrair telefone do formato WPPConnect (5518996311933@c.us → 5518996311933)
+      telefone = from.replace('@c.us', '').replace('@s.whatsapp.net', '');
 
-      // Texto básico
-      texto = msg.conversation || msg.extendedTextMessage?.text || msg.imageMessage?.caption || msg.videoMessage?.caption || '';
+      // Extrair texto da mensagem
+      texto = payload.body || payload.content || payload.caption || '';
 
-      // === FORMATOS DE RESPOSTA DE BOTÃO (Evolution API v2) ===
-
-      // 1) buttonsResponseMessage (botões antigos/legacy)
-      if (msg.buttonsResponseMessage) {
-        buttonId = msg.buttonsResponseMessage.selectedButtonId || null;
-        texto = msg.buttonsResponseMessage.selectedDisplayText || texto;
+      // WPPConnect: Respostas de botões interativos
+      if (payload.type === 'buttons_response') {
+        buttonId = payload.selectedButtonId || payload.buttonId || null;
+        texto = payload.selectedDisplayText || payload.body || texto;
+        console.log(`[Webhook] 🔘 Botão WPPConnect: buttonId=${buttonId} texto="${texto}"`);
       }
 
-      // 2) listResponseMessage (resposta de lista)
-      if (msg.listResponseMessage) {
-        buttonId = msg.listResponseMessage.singleSelectReply?.selectedRowId || null;
-        texto = msg.listResponseMessage.title || texto;
+      // WPPConnect: Respostas de lista interativa
+      if (payload.type === 'list_response') {
+        buttonId = payload.listResponse?.singleSelectReply?.selectedRowId || payload.selectedRowId || null;
+        texto = payload.listResponse?.title || payload.body || texto;
+        console.log(`[Webhook] 📋 Lista WPPConnect: buttonId=${buttonId} texto="${texto}"`);
       }
 
-      // 3) templateButtonReplyMessage (botões de template)
-      if (msg.templateButtonReplyMessage) {
-        buttonId = msg.templateButtonReplyMessage.selectedId || null;
-        texto = msg.templateButtonReplyMessage.selectedDisplayText || texto;
+      // Fallback: tipo de mensagem com ID de botão diretamente
+      if (!buttonId && payload.quotedMsgId && payload.selectedButtonId) {
+        buttonId = payload.selectedButtonId;
       }
 
-      // 4) interactiveResponseMessage (nativeFlow buttons — Evolution API v2.x)
-      if (msg.interactiveResponseMessage) {
-        try {
-          const nativeBody = msg.interactiveResponseMessage.nativeFlowResponseMessage;
-          if (nativeBody) {
-            const paramsJson = nativeBody.paramsJson;
-            if (paramsJson) {
-              const parsed = JSON.parse(paramsJson);
-              buttonId = parsed.id || null;
-              texto = parsed.display_text || parsed.text || texto;
-            }
-            // Fallback: verificar selectedIndex
-            if (!buttonId && nativeBody.name === 'quick_reply') {
-              buttonId = nativeBody.selectedButtonId || null;
-            }
-          }
-          // Fallback: body.text do interactiveResponseMessage
-          if (!buttonId && msg.interactiveResponseMessage.body?.text) {
-            texto = msg.interactiveResponseMessage.body.text;
-          }
-        } catch (e) {
-          console.error('[Webhook] Erro ao parsear interactiveResponseMessage:', e);
-        }
-      }
-
-      // 5) interactiveMessage com body (pode ser resposta direta em algumas versões)
-      if (!buttonId && !texto && msg.interactiveMessage?.body?.text) {
-        texto = msg.interactiveMessage.body.text;
-      }
-
-      // Log resultado do parse
-      console.log(`[Webhook] Parse result: tel=${telefone} | texto="${texto?.substring(0,50)}" | buttonId=${buttonId}`);
+      console.log(`[Webhook] Parse: tel=${telefone} | texto="${texto?.substring(0,50)}" | buttonId=${buttonId} | type=${payload.type}`);
 
     } else if (payload.telefone && payload.mensagem) {
+      // Formato simplificado (para testes via curl)
       telefone = payload.telefone;
       texto = payload.mensagem;
       buttonId = payload.buttonId || null;
     } else {
-      return res.json({ status: 'ignorado', motivo: 'evento_nao_tratado', event });
+      return res.json({ status: 'ignorado', motivo: 'evento_nao_tratado', event: payload.event || 'unknown' });
     }
 
-    if (payload.data?.key?.fromMe) return res.json({ status: 'ignorado', motivo: 'mensagem_propria' });
     if (!texto || !telefone) return res.json({ status: 'ignorado', motivo: 'sem_texto_ou_telefone' });
 
     telefone = telefone.replace(/\D/g, '');
@@ -190,7 +167,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (resultado.acao === 'reenviar_opcoes') {
       const msgInvalida = gerarMensagemOpcaoInvalida(contato.etapaBot);
       if (msgInvalida) {
-        await enviarMensagem(contato.telefone, msgInvalida);
+        // Re-enviar com botões interativos (WPPConnect suporta!)
+        const botoesEtapa = BOTOES[contato.etapaBot] || null;
+        if (botoesEtapa) {
+          await enviarMensagemComBotoes(contato.telefone, msgInvalida, botoesEtapa, 'Escolha uma opção 👆');
+        } else {
+          await enviarMensagem(contato.telefone, msgInvalida);
+        }
         await prisma.mensagem.create({
           data: { contatoId: contato.id, direcao: 'enviada', conteudo: '[Opção inválida - opções reenviadas]', etapa: contato.etapaBot },
         });
