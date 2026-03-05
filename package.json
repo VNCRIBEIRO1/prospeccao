@@ -1,0 +1,11 @@
+{
+  "name": "prospeccao",
+  "version": "1.0.0",
+  "description": "WhatsApp Prospecção — ponto de entrada raiz",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "frontend": "cd frontend && npx next dev -p 3000",
+    "backend": "cd backend && node server.js"
+  }
+}
