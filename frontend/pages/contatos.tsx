@@ -10,13 +10,15 @@ import toast from 'react-hot-toast';
 import api from '../lib/api';
 
 const STATUS_INFO: Record<string, { label: string; cor: string; icon: string }> = {
-  pendente:          { label: 'Aguardando envio', cor: 'bg-slate-500/20 text-slate-300 border-slate-500/30', icon: '⏳' },
-  enviado:           { label: 'Msg enviada',      cor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',   icon: '📤' },
-  respondeu:         { label: 'Respondeu',         cor: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', icon: '💬' },
-  interessado:       { label: 'Interessado',       cor: 'bg-orange-500/20 text-orange-300 border-orange-500/30', icon: '🔥' },
-  fechado:           { label: 'Fechou negócio',    cor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: '✅' },
-  naoInteresse:      { label: 'Sem interesse',     cor: 'bg-red-500/20 text-red-300 border-red-500/30',     icon: '❌' },
-  pendente_followup: { label: 'Follow-up',         cor: 'bg-purple-500/20 text-purple-300 border-purple-500/30', icon: '🔄' },
+  pendente:               { label: 'Aguardando envio', cor: 'bg-slate-500/20 text-slate-300 border-slate-500/30', icon: '⏳' },
+  enviado:                { label: 'Msg enviada',      cor: 'bg-blue-500/20 text-blue-300 border-blue-500/30',   icon: '📤' },
+  respondeu:              { label: 'Respondeu',         cor: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', icon: '💬' },
+  interessado:            { label: 'Interessado',       cor: 'bg-orange-500/20 text-orange-300 border-orange-500/30', icon: '🔥' },
+  fechado:                { label: 'Fechou negócio',    cor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: '✅' },
+  naoInteresse:           { label: 'Sem interesse',     cor: 'bg-red-500/20 text-red-300 border-red-500/30',     icon: '❌' },
+  pendente_followup:      { label: 'Follow-up',         cor: 'bg-purple-500/20 text-purple-300 border-purple-500/30', icon: '🔄' },
+  aguardando_documentos:  { label: 'Aguard. Docs',      cor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',  icon: '📎' },
+  aguardando_contato:     { label: 'Aguard. Contato',   cor: 'bg-amber-500/20 text-amber-300 border-amber-500/30', icon: '📞' },
 };
 
 const STAT_KEYS = ['pendente','enviado','respondeu','interessado','fechado','naoInteresse'] as const;

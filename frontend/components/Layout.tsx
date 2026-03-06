@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   LayoutDashboard, Users, Megaphone, Target, Settings,
-  Menu, X, MessageSquare, Wifi, WifiOff
+  Menu, X, MessageSquare, Wifi, WifiOff, Calendar, Bell, Package
 } from 'lucide-react';
 import { useEffect } from 'react';
 import api from '../lib/api';
@@ -12,12 +12,23 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+interface NotificacaoItem {
+  id: number;
+  tipo: string;
+  titulo: string;
+  mensagem: string;
+  lida: boolean;
+  criadoEm: string;
+}
+
 const menuItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/contatos', label: 'Contatos', icon: Users },
   { href: '/campanhas', label: 'Campanhas', icon: Megaphone },
   { href: '/mensagens', label: 'Mensagens', icon: MessageSquare },
   { href: '/leads', label: 'Leads', icon: Target },
+  { href: '/agendamentos', label: 'Agendamentos', icon: Calendar },
+  { href: '/clientes', label: 'Clientes', icon: Package },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
 
@@ -25,6 +36,9 @@ export default function Layout({ children }: LayoutProps) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [whatsappConectado, setWhatsappConectado] = useState(false);
+  const [notificacoes, setNotificacoes] = useState<NotificacaoItem[]>([]);
+  const [naoLidas, setNaoLidas] = useState(0);
+  const [showNotificacoes, setShowNotificacoes] = useState(false);
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -35,10 +49,37 @@ export default function Layout({ children }: LayoutProps) {
         setWhatsappConectado(false);
       }
     };
+    const checkNotificacoes = async () => {
+      try {
+        const { data } = await api.get('/notificacoes', { params: { limit: 10 } });
+        setNotificacoes(data.notificacoes || []);
+        setNaoLidas(data.naoLidas || 0);
+      } catch {}
+    };
     checkConnection();
+    checkNotificacoes();
     const interval = setInterval(checkConnection, 30000);
-    return () => clearInterval(interval);
+    const intervalNotif = setInterval(checkNotificacoes, 15000);
+    return () => { clearInterval(interval); clearInterval(intervalNotif); };
   }, []);
+
+  async function marcarTodasLidas() {
+    try {
+      await api.patch('/notificacoes', { marcarTodas: true });
+      setNaoLidas(0);
+      setNotificacoes(prev => prev.map(n => ({ ...n, lida: true })));
+    } catch {}
+  }
+
+  function formatarTempoNotif(data: string) {
+    const diff = Date.now() - new Date(data).getTime();
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return 'agora';
+    if (min < 60) return `${min}min`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 flex">
@@ -100,11 +141,96 @@ export default function Layout({ children }: LayoutProps) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen">
         {/* Top bar */}
-        <header className="h-16 bg-slate-800 border-b border-slate-700 flex items-center px-6 lg:hidden">
-          <button onClick={() => setSidebarOpen(true)} className="text-slate-400">
-            <Menu className="w-6 h-6" />
-          </button>
-          <h1 className="ml-4 text-lg font-bold text-white">Prospecção</h1>
+        <header className="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6">
+          <div className="flex items-center">
+            <button onClick={() => setSidebarOpen(true)} className="text-slate-400 lg:hidden">
+              <Menu className="w-6 h-6" />
+            </button>
+            <h1 className="ml-4 text-lg font-bold text-white lg:hidden">Prospecção</h1>
+          </div>
+
+          {/* Notification Bell */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotificacoes(!showNotificacoes)}
+              className="relative p-2 rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              <Bell className="w-5 h-5 text-slate-400" />
+              {naoLidas > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center w-5 h-5 text-[10px] font-bold text-white bg-red-500 rounded-full animate-pulse">
+                  {naoLidas > 9 ? '9+' : naoLidas}
+                </span>
+              )}
+            </button>
+
+            {/* Dropdown de notificações */}
+            {showNotificacoes && (
+              <div className="absolute right-0 top-12 w-80 md:w-96 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-blue-400" />
+                    Notificações
+                    {naoLidas > 0 && (
+                      <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">{naoLidas} novas</span>
+                    )}
+                  </h3>
+                  <div className="flex gap-2">
+                    {naoLidas > 0 && (
+                      <button onClick={marcarTodasLidas} className="text-xs text-blue-400 hover:text-blue-300">
+                        Marcar lidas
+                      </button>
+                    )}
+                    <button onClick={() => setShowNotificacoes(false)} className="text-slate-400 hover:text-slate-300">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-y-auto flex-1">
+                  {notificacoes.length === 0 ? (
+                    <div className="p-6 text-center text-slate-500 text-sm">
+                      Nenhuma notificação
+                    </div>
+                  ) : (
+                    notificacoes.map((n) => (
+                      <div
+                        key={n.id}
+                        className={`px-4 py-3 border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors cursor-pointer ${
+                          !n.lida ? 'bg-blue-500/5 border-l-2 border-l-blue-400' : ''
+                        }`}
+                        onClick={() => {
+                          if (n.tipo.includes('agendamento')) {
+                            router.push('/agendamentos');
+                            setShowNotificacoes(false);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-white truncate">{n.titulo}</p>
+                            <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{n.mensagem}</p>
+                          </div>
+                          <span className="text-[10px] text-slate-500 whitespace-nowrap mt-0.5">{formatarTempoNotif(n.criadoEm)}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {notificacoes.length > 0 && (
+                  <div className="px-4 py-2 border-t border-slate-700 text-center">
+                    <Link
+                      href="/agendamentos"
+                      className="text-xs text-blue-400 hover:text-blue-300"
+                      onClick={() => setShowNotificacoes(false)}
+                    >
+                      Ver todos os agendamentos →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </header>
 
         {/* Page content */}

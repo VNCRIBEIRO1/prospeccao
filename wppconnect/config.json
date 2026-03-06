@@ -1,0 +1,52 @@
+{
+  "secretKey": "prospeccao-secret-2024",
+  "host": "0.0.0.0",
+  "port": 21465,
+  "deviceName": "Prospeccao Bot",
+  "startAllSession": true,
+  "tokenStoreType": "file",
+  "maxListeners": 15,
+  "customUserDataDir": "./userDataDir/",
+  "webhook": {
+    "url": "http://host.docker.internal:3000/api/webhook/whatsapp",
+    "autoDownload": true,
+    "uploadS3": false,
+    "readMessage": true,
+    "allUnreadOnStart": false,
+    "listenAcks": true,
+    "onPresenceChanged": false,
+    "onParticipantsChanged": false,
+    "onReactionMessage": false,
+    "onPollResponse": false,
+    "onRevokedMessage": false,
+    "onLabelUpdated": false,
+    "onSelfMessage": false,
+    "ignore": ["status@broadcast"]
+  },
+  "websocket": {
+    "autoDownload": false,
+    "uploadS3": false
+  },
+  "chatwoot": {
+    "sendQrCode": false,
+    "sendStatus": false
+  },
+  "archive": {
+    "enable": false
+  },
+  "log": {
+    "level": "info",
+    "logger": ["console"]
+  },
+  "createOptions": {
+    "browserArgs": [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--no-first-run",
+      "--no-zygote",
+      "--disable-gpu"
+    ]
+  }
+}

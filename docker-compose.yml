@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ============================================
   # WPPConnect-Server — Conexão WhatsApp via QR Code

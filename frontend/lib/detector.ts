@@ -73,6 +73,11 @@ const SEMANTICA_POR_ETAPA: Record<string, Array<{ regex: RegExp; opcao: number }
     { regex: /\b(sim|quero|contratar|fechar|aceito|bora|vamos|base|pacote|basico|padrao|normal)\b/, opcao: 2 },
     { regex: /\b(pensar|depois|talvez|mais tarde|nao agora|vou pensar|deixa|nao sei|nao|obrigado|valeu)\b/, opcao: 3 },
   ],
+  // msg3a: 1=Enviar docs agora, 2=Aguardar contato
+  msg3a: [
+    { regex: /\b(enviar|mandar|mando|documento|docs|logo|foto|agora|ja|pronto|vamos|bora|pode|quero)\b/, opcao: 1 },
+    { regex: /\b(aguardar|esperar|espero|depois|calma|mais tarde|entrar em contato|voces|retorno|contato)\b/, opcao: 2 },
+  ],
 };
 
 /**

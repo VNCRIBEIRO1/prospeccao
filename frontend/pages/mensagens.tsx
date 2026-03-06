@@ -23,45 +23,82 @@ interface Botao {
 
 // Mapa de etapa → próximas etapas para visualizar o fluxo
 const FLUXO_MAPA: Record<string, { label: string; descricao: string; cor: string; icone: string }> = {
-  msg1:       { label: 'Mensagem Inicial',   descricao: 'Primeiro contato com o prospect', cor: 'blue',    icone: '1️⃣' },
-  msg2:       { label: 'Apresentação',       descricao: 'Detalhes do produto/serviço',     cor: 'purple',  icone: '2️⃣' },
-  msg2b:      { label: 'Já Tem Site',        descricao: 'Prospect que já possui site',     cor: 'indigo',  icone: '2️⃣b' },
-  msg2b_fim:  { label: 'Encerramento OK',    descricao: 'Prospect bem atendido',           cor: 'slate',   icone: '✅' },
-  msg3a:      { label: 'Fechamento',         descricao: 'Prospect quer contratar!',        cor: 'green',   icone: '🎉' },
-  msg3b:      { label: 'Dúvidas',            descricao: 'FAQ e respostas',                 cor: 'yellow',  icone: '❓' },
-  msg3b_repeat: { label: 'Dúvidas (2ª vez)', descricao: 'Último follow-up de dúvidas',     cor: 'amber',   icone: '❓' },
-  msg3c:      { label: 'Vou Pensar',         descricao: 'Prospect indeciso',               cor: 'orange',  icone: '🤔' },
+  msg1:              { label: 'Mensagem Inicial',       descricao: 'Primeiro contato com o prospect',         cor: 'blue',    icone: '1️⃣' },
+  msg2:              { label: 'Apresentação',           descricao: 'Detalhes do produto/serviço',             cor: 'purple',  icone: '2️⃣' },
+  msg2b:             { label: 'Já Tem Site',            descricao: 'Prospect que já possui site',             cor: 'indigo',  icone: '🌐' },
+  msg2b_fim:         { label: 'Encerramento OK',        descricao: 'Prospect bem atendido',                   cor: 'slate',   icone: '✅' },
+  msg3a:             { label: 'Fechamento',             descricao: 'Prospect quer contratar!',                cor: 'green',   icone: '🎉' },
+  msg_coletar_nome:  { label: 'Coleta de Nome',          descricao: 'Coleta nome para criar pedido',            cor: 'lime',    icone: '📝' },
+  msg_enviar_docs:   { label: 'Enviar Documentos',      descricao: 'Instrui envio com código de pedido',       cor: 'emerald', icone: '📤' },
+  msg_aguardando:    { label: 'Aguardando Contato',     descricao: 'Aguardando retorno do desenvolvedor',     cor: 'amber',   icone: '⏳' },
+  msg_finalizado:    { label: 'Finalizado',             descricao: 'Cadastro confirmado',                     cor: 'teal',    icone: '✅' },
+  msg_duvidas:       { label: 'Menu Dúvidas',           descricao: 'Triagem de dúvidas',                      cor: 'yellow',  icone: '❓' },
+  msg_precos:        { label: 'Preços e Prazos',        descricao: 'Detalhes sobre preços',                   cor: 'emerald', icone: '💰' },
+  msg_incluso:       { label: 'O que Inclui',           descricao: 'Pacote completo',                         cor: 'teal',    icone: '📦' },
+  msg_processo:      { label: 'Como Funciona',          descricao: 'Processo de criação',                     cor: 'cyan',    icone: '⚙️' },
+  msg_personalizado: { label: 'Projeto Personalizado',  descricao: 'Soluções sob medida',                     cor: 'violet',  icone: '🚀' },
+  msg_humano:        { label: 'Falar com Humano',       descricao: 'Encaminha para desenvolvedor',             cor: 'pink',    icone: '💬' },
+  msg3c:             { label: 'Vou Pensar',             descricao: 'Prospect indeciso',                       cor: 'orange',  icone: '🤔' },
 };
 
 const BOTOES_MAPA: Record<string, Botao[]> = {
   msg1: [
-    { id: 'opt_1', texto: '1️⃣ Sim! Quero conhecer', descricao: 'Veja um exemplo de site' },
-    { id: 'opt_2', texto: '2️⃣ Já tenho site', descricao: 'Me conta sobre seu site' },
-    { id: 'opt_3', texto: '3️⃣ Agora não', descricao: 'Sem compromisso' },
+    { id: 'msg1_sim', texto: '✅ Quero conhecer', descricao: 'Veja um exemplo de site' },
+    { id: 'msg1_site', texto: '🌐 Já tenho site', descricao: 'Me conta sobre seu site' },
+    { id: 'msg1_nao', texto: '⏳ Agora não', descricao: 'Sem compromisso' },
   ],
   msg2: [
-    { id: 'opt_1', texto: '1️⃣ Quero contratar!', descricao: 'Fechar negócio' },
-    { id: 'opt_2', texto: '2️⃣ Tenho dúvidas', descricao: 'Tirar dúvidas' },
-    { id: 'opt_3', texto: '3️⃣ Vou pensar...', descricao: 'Sem pressa' },
+    { id: 'msg2_contratar', texto: '🔥 Quero contratar!', descricao: 'Fechar negócio' },
+    { id: 'msg2_duvidas', texto: '❓ Tenho dúvidas', descricao: 'Tirar dúvidas' },
+    { id: 'msg2_pensar', texto: '🤔 Vou pensar...', descricao: 'Sem pressa' },
   ],
   msg2b: [
-    { id: 'opt_1', texto: '1️⃣ Tem tudo isso sim', descricao: 'Já está completo' },
-    { id: 'opt_2', texto: '2️⃣ Tem algumas coisas', descricao: 'Faltam funcionalidades' },
-    { id: 'opt_3', texto: '3️⃣ Não tem, me conta mais!', descricao: 'Quero saber mais' },
+    { id: 'msg2b_completo', texto: '💪 Tem tudo isso sim', descricao: 'Já está completo' },
+    { id: 'msg2b_parcial', texto: '🔧 Tem algumas coisas', descricao: 'Faltam funcionalidades' },
+    { id: 'msg2b_naotem', texto: '👀 Não tem, me conta!', descricao: 'Quero saber mais' },
   ],
-  msg3b: [
-    { id: 'opt_1', texto: '1️⃣ Quero contratar!', descricao: 'Fechar negócio' },
-    { id: 'opt_2', texto: '2️⃣ Ainda tenho dúvidas', descricao: 'Mais perguntas' },
-    { id: 'opt_3', texto: '3️⃣ Vou pensar...', descricao: 'Sem pressa' },
+  msg3a: [
+    { id: 'msg3a_enviar_docs', texto: '📤 Enviar documentos agora', descricao: 'Enviar para o outro número' },
+    { id: 'msg3a_aguardar', texto: '⏳ Aguardar contato', descricao: 'Prefere esperar retorno' },
+  ],
+  msg_duvidas: [
+    { id: 'duvida_precos', texto: '💰 Preços e prazos', descricao: 'Quanto custa' },
+    { id: 'duvida_incluso', texto: '📦 O que está incluso', descricao: 'Pacote completo' },
+    { id: 'duvida_processo', texto: '⚙️ Como funciona', descricao: 'Processo' },
+  ],
+  msg_precos: [
+    { id: 'precos_contratar', texto: '🔥 Fechar agora!', descricao: 'Contratar' },
+    { id: 'precos_personalizado', texto: '🚀 Projeto personalizado', descricao: 'Sob medida' },
+    { id: 'precos_duvidas', texto: '❓ Outras dúvidas', descricao: 'Mais perguntas' },
+  ],
+  msg_incluso: [
+    { id: 'incluso_contratar', texto: '🔥 Quero contratar!', descricao: 'Contratar' },
+    { id: 'incluso_personalizado', texto: '🚀 Projeto personalizado', descricao: 'Sob medida' },
+    { id: 'incluso_duvidas', texto: '❓ Outras dúvidas', descricao: 'Mais perguntas' },
+  ],
+  msg_processo: [
+    { id: 'processo_contratar', texto: '🔥 Quero contratar!', descricao: 'Contratar' },
+    { id: 'processo_duvidas', texto: '❓ Outras dúvidas', descricao: 'Mais perguntas' },
+    { id: 'processo_pensar', texto: '🤔 Vou pensar...', descricao: 'Sem pressa' },
+  ],
+  msg_personalizado: [
+    { id: 'pers_falar', texto: '💬 Falar com desenvolvedor', descricao: 'Atendimento humano' },
+    { id: 'pers_base', texto: '🔥 Quero o pacote base', descricao: 'Pacote padrão' },
+    { id: 'pers_pensar', texto: '🤔 Vou pensar...', descricao: 'Sem pressa' },
   ],
 };
 
 // Destinos de cada botão por etapa
 const DESTINOS: Record<string, Record<string, string>> = {
-  msg1:  { opt_1: 'msg2', opt_2: 'msg2b', opt_3: 'msg3c' },
-  msg2:  { opt_1: 'msg3a', opt_2: 'msg3b', opt_3: 'msg3c' },
-  msg2b: { opt_1: 'msg2b_fim', opt_2: 'msg2', opt_3: 'msg2' },
-  msg3b: { opt_1: 'msg3a', opt_2: 'msg3b_repeat', opt_3: 'msg3c' },
+  msg1:              { msg1_sim: 'msg2', msg1_site: 'msg2b', msg1_nao: 'msg3c' },
+  msg2:              { msg2_contratar: 'msg3a', msg2_duvidas: 'msg_duvidas', msg2_pensar: 'msg3c' },
+  msg2b:             { msg2b_completo: 'msg2b_fim', msg2b_parcial: 'msg2', msg2b_naotem: 'msg2' },
+  msg3a:             { msg3a_enviar_docs: 'msg_coletar_nome', msg3a_aguardar: 'msg_coletar_nome' },
+  msg_duvidas:       { duvida_precos: 'msg_precos', duvida_incluso: 'msg_incluso', duvida_processo: 'msg_processo' },
+  msg_precos:        { precos_contratar: 'msg3a', precos_personalizado: 'msg_personalizado', precos_duvidas: 'msg_duvidas' },
+  msg_incluso:       { incluso_contratar: 'msg3a', incluso_personalizado: 'msg_personalizado', incluso_duvidas: 'msg_duvidas' },
+  msg_processo:      { processo_contratar: 'msg3a', processo_duvidas: 'msg_duvidas', processo_pensar: 'msg3c' },
+  msg_personalizado: { pers_falar: 'msg_humano', pers_base: 'msg3a', pers_pensar: 'msg3c' },
 };
 
 export default function Mensagens() {

@@ -139,12 +139,13 @@ async function enviarEtapaBot(contatoId: number, etapa: string): Promise<{ suces
 // ============================================
 // NOTIFICAR LEAD QUENTE VIA TELEGRAM
 // ============================================
-async function notificarLeadQuente(contato: any) {
+async function notificarLeadQuente(contato: any, codigoPedido?: string) {
   const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!telegramToken || !chatId) return;
 
-  const msg = `🔥 *LEAD QUENTE!*\n\n📋 *Escritório:* ${contato.escritorio || 'Não informado'}\n👤 *Contato:* ${contato.nome}\n📱 *Telefone:* ${contato.telefone}\n📍 *Cidade:* ${contato.cidade || 'Não informada'}\n⚖️ *Área:* ${contato.areaAtuacao || 'Não informada'}\n🕐 *Quando:* ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\n👉 O lead quer contratar! Entre em contato AGORA.\n📲 wa.me/${contato.telefone.replace(/\D/g, '')}`;
+  const codLine = codigoPedido ? `\n📋 *Pedido:* ${codigoPedido}` : '';
+  const msg = `🔥 *LEAD QUENTE!*${codLine}\n\n📋 *Escritório:* ${contato.escritorio || 'Não informado'}\n👤 *Contato:* ${contato.nome}\n📱 *Telefone:* ${contato.telefone}\n📍 *Cidade:* ${contato.cidade || 'Não informada'}\n⚖️ *Área:* ${contato.areaAtuacao || 'Não informada'}\n🕐 *Quando:* ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\n\n👉 O lead quer contratar! Entre em contato AGORA.\n📲 wa.me/${contato.telefone.replace(/\D/g, '')}`;
 
   try {
     await axios.post(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
@@ -153,6 +154,65 @@ async function notificarLeadQuente(contato: any) {
       parse_mode: 'Markdown',
     });
   } catch {}
+}
+
+// ============================================
+// GERAR CÓDIGO DE PEDIDO ÚNICO
+// Formato: PED-YYYYMMDD-NNN
+// ============================================
+async function gerarCodigoPedido(): Promise<string> {
+  const hoje = new Date();
+  const data = hoje.toISOString().slice(0, 10).replace(/-/g, '');
+  const inicioDia = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const fimDia = new Date(inicioDia.getTime() + 24 * 60 * 60 * 1000);
+
+  const count = await prisma.pedido.count({
+    where: { criadoEm: { gte: inicioDia, lt: fimDia } },
+  });
+
+  const seq = String(count + 1).padStart(3, '0');
+  return `PED-${data}-${seq}`;
+}
+
+// ============================================
+// CRIAR AGENDAMENTO NO BANCO
+// ============================================
+async function criarAgendamento(contato: any, tipo: string, codigoPedido?: string) {
+  try {
+    const codLabel = codigoPedido ? ` — Pedido ${codigoPedido}` : '';
+    const agendamento = await prisma.agendamento.create({
+      data: {
+        contatoId: contato.id,
+        tipo,
+        status: 'pendente',
+        resumo: `${contato.escritorio || contato.nome}${codLabel} — ${contato.cidade || 'Cidade não informada'} — ${contato.areaAtuacao || 'Área não informada'}`,
+        notas: tipo === 'enviar_docs'
+          ? `Cliente vai enviar documentos para 18996311933${codigoPedido ? ` com código ${codigoPedido}` : ''}`
+          : 'Cliente aguardando contato de retorno',
+        prioridade: tipo === 'enviar_docs' ? 'alta' : 'normal',
+      },
+    });
+    // Criar notificação no site
+    const tipoLabel = tipo === 'enviar_docs' ? '📤 enviará documentos' : '⏳ aguarda seu contato';
+    await prisma.notificacao.create({
+      data: {
+        tipo: 'lead_finalizado',
+        titulo: `🔥 Lead finalizado com interesse!`,
+        mensagem: `${contato.escritorio || contato.nome} (${contato.telefone}) ${tipoLabel}. Criado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`,
+        dados: JSON.stringify({
+          agendamentoId: agendamento.id,
+          contatoId: contato.id,
+          tipo,
+          telefone: contato.telefone,
+          nome: contato.nome,
+        }),
+      },
+    });
+
+    console.log(`[Webhook] 📅 Agendamento criado para contato ${contato.id} (${tipo}) + notificação`);
+  } catch (err: any) {
+    console.error(`[Webhook] ❌ Erro ao criar agendamento:`, err.message);
+  }
 }
 
 // ============================================
@@ -350,7 +410,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // Estratégia 4: Contato ativo em etapa não-terminal (fallback amplo)
       if (!contato) {
-        const ETAPAS_TERMINAIS_LID = ['msg3a', 'msg3c', 'msg2b_fim', 'atendimento_manual', 'bloqueado'];
+        const ETAPAS_TERMINAIS_LID = ['msg3a', 'msg3c', 'msg2b_fim', 'msg_humano', 'atendimento_manual', 'bloqueado', 'msg_enviar_docs', 'msg_aguardando', 'msg_finalizado', 'msg_coletar_nome'];
         contato = await prisma.contato.findFirst({
           where: {
             etapaBot: { notIn: ETAPAS_TERMINAIS_LID },
@@ -434,6 +494,128 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await prisma.mensagem.create({
       data: { contatoId: contato.id, direcao: 'recebida', conteudo: texto.substring(0, 500), etapa: etapaAtual },
     });
+
+    // ════════════════════════════════════════
+    // HANDLER ESPECIAL: COLETA DE NOME
+    // Quando etapa é msg_coletar_nome, qualquer texto é tratado como nome
+    // ════════════════════════════════════════
+    if (etapaAtual === 'msg_coletar_nome') {
+      const nomeTrimmed = texto.trim();
+
+      // Checar bloqueio
+      const tNorm = nomeTrimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (/\b(parar|pare|bloquear|spam|denuncia|denunciar|sair|remover|cancelar|stop|chega)\b/.test(tNorm)) {
+        await prisma.contato.update({ where: { id: contato.id }, data: { status: 'naoInteresse', etapaBot: 'bloqueado' } });
+        return res.json({ status: 'bloqueado', contato: contato.id });
+      }
+
+      // Validar nome (mínimo 2 chars, não apenas números)
+      if (nomeTrimmed.length < 2 || /^\d+$/.test(nomeTrimmed)) {
+        await enviarMensagem(contato.telefone, '📝 Por favor, digite o *nome completo* do responsável pelo escritório:');
+        await prisma.mensagem.create({
+          data: { contatoId: contato.id, direcao: 'enviada', conteudo: '[Reenvio: coleta de nome]', etapa: 'msg_coletar_nome' },
+        });
+        return res.json({ status: 'aguardando_nome', contato: contato.id });
+      }
+
+      // Salvar nome no contato
+      await prisma.contato.update({ where: { id: contato.id }, data: { nome: nomeTrimmed } });
+      contato = { ...contato, nome: nomeTrimmed };
+
+      // Gerar código de pedido
+      const codigoPedido = await gerarCodigoPedido();
+
+      // Criar Pedido no banco
+      await prisma.pedido.create({
+        data: {
+          codigo: codigoPedido,
+          contatoId: contato.id,
+          nomeCliente: nomeTrimmed,
+          escritorio: contato.escritorio || null,
+          cidade: contato.cidade || null,
+          areaAtuacao: contato.areaAtuacao || null,
+          telefone: contato.telefone,
+          tipo: 'site_chatbot',
+          status: 'novo',
+        },
+      });
+
+      // Determinar próximo passo com base no status (definido na transição msg3a)
+      const isEnviarDocs = contato.status === 'aguardando_documentos';
+
+      if (isEnviarDocs) {
+        const msg = `Perfeito, *${nomeTrimmed}*! 🎉
+
+Seu código de pedido é: *${codigoPedido}*
+
+📱 Para enviar os documentos, mande uma mensagem para:
+👉 *wa.me/5518996311933*
+
+Ao enviar, informe o código *${codigoPedido}* e anexe:
+📎 Logo do escritório
+📸 Fotos dos sócios
+📝 Nome, áreas de atuação, endereço
+🎨 Cores e estilo preferidos
+🔗 Domínio desejado (ex: escritoriosilva.adv.br)
+
+Nosso desenvolvedor vai receber e iniciar o projeto! 🚀`;
+
+        await enviarMensagem(contato.telefone, msg);
+        await prisma.contato.update({ where: { id: contato.id }, data: { etapaBot: 'msg_enviar_docs' } });
+      } else {
+        const msg = `Obrigado, *${nomeTrimmed}*! ⏳
+
+Seu interesse foi registrado com sucesso!
+📋 Código do pedido: *${codigoPedido}*
+
+Nosso desenvolvedor vai entrar em contato com você em breve.
+
+Se mudar de ideia e quiser adiantar, envie os documentos para:
+👉 *wa.me/5518996311933* informando o código *${codigoPedido}*
+
+Obrigado pela confiança! 🤝`;
+
+        await enviarMensagem(contato.telefone, msg);
+        await prisma.contato.update({ where: { id: contato.id }, data: { etapaBot: 'msg_aguardando' } });
+      }
+
+      // Salvar mensagem enviada
+      const etapaFinal = isEnviarDocs ? 'msg_enviar_docs' : 'msg_aguardando';
+      await prisma.mensagem.create({
+        data: { contatoId: contato.id, direcao: 'enviada', conteudo: `[Pedido ${codigoPedido} criado]`, etapa: etapaFinal },
+      });
+
+      // Criar Agendamento + Notificação no painel
+      const tipo = isEnviarDocs ? 'enviar_docs' : 'aguardando_contato';
+      await criarAgendamento(contato, tipo, codigoPedido);
+
+      // Notificar Telegram
+      await notificarLeadQuente(contato, codigoPedido);
+
+      // Criar/atualizar Lead
+      const leadExistente = await prisma.lead.findFirst({ where: { contatoId: contato.id } });
+      const estagioLead = isEnviarDocs ? 'aguardando_documentos' : 'aguardando_contato';
+      if (!leadExistente) {
+        await prisma.lead.create({
+          data: { contatoId: contato.id, estagio: estagioLead, notas: `Pedido ${codigoPedido} — ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` },
+        });
+      } else {
+        await prisma.lead.update({
+          where: { id: leadExistente.id },
+          data: { estagio: estagioLead, notas: `Pedido ${codigoPedido} — ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` },
+        });
+      }
+
+      console.log(`[Webhook] 📋 Pedido ${codigoPedido} criado para ${nomeTrimmed} (${tipo})`);
+
+      return res.json({
+        status: 'pedido_criado',
+        contato: contato.id,
+        codigoPedido,
+        tipo,
+        nome: nomeTrimmed,
+      });
+    }
 
     // ─── DETECTAR RESPOSTA ───
     const resultado = detectarResposta(texto, etapaAtual, buttonId);
@@ -526,6 +708,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const contatoCompleto = await prisma.contato.findUnique({ where: { id: contato.id } });
       if (contatoCompleto) await notificarLeadQuente(contatoCompleto);
     }
+
+    // (Pedidos são agora criados via msg_coletar_nome handler acima)
 
     // Follow-up pendente
     if (resultado.proximaEtapa === 'msg3c') {

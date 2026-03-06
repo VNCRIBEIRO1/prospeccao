@@ -29,8 +29,10 @@ export interface BotaoInterativo {
 // ETAPAS TERMINAIS — Ao receber nova mensagem, reinicia de msg1
 // ============================================
 export const ETAPAS_TERMINAIS = [
-  'msg3a', 'msg3c', 'msg2b_fim', 'msg_humano',
+  'msg3c', 'msg2b_fim', 'msg_humano',
   'atendimento_manual', 'bloqueado',
+  'msg_finalizado', 'msg_aguardando',
+  'msg_enviar_docs',
 ];
 
 // ============================================
@@ -197,7 +199,84 @@ Enquanto isso, já podem ir separando:
 
 *Zero risco* — primeiro veem, depois pagam. 💪
 
-Quanto mais detalhes trouxerem, mais rápido entregamos! 🚀`,
+Quanto mais detalhes trouxerem, mais rápido entregamos! 🚀
+
+Como prefere prosseguir? 👇`,
+    ],
+    botoes: [
+      { id: 'msg3a_enviar_docs', texto: '📤 Enviar documentos agora' },
+      { id: 'msg3a_aguardar', texto: '⏳ Aguardar contato' },
+    ],
+    rodape: 'Escolha uma opção 👆',
+  },
+
+  // ─────────────────────────────────────────
+  // MSG_COLETAR_NOME — Coleta nome do responsável para criar pedido
+  // ─────────────────────────────────────────
+  msg_coletar_nome: {
+    textos: [
+      `Perfeito! 🎉
+
+Para criarmos seu pedido, preciso de uma informação rápida:
+
+📝 *Qual o nome completo do responsável pelo escritório?*
+
+Digite abaixo 👇`,
+    ],
+    botoes: null,
+  },
+
+  // ─────────────────────────────────────────
+  // MSG_ENVIAR_DOCS — Redirecionar para o outro número
+  // ─────────────────────────────────────────
+  msg_enviar_docs: {
+    textos: [
+      `📤 *Documentos pendentes*
+
+Envie os materiais para nosso número de atendimento:
+👉 *18996311933*
+
+Ao enviar, informe seu *código de pedido* e anexe:
+📎 Logo do escritório
+📸 Fotos dos sócios
+📝 Nome, áreas de atuação, endereço
+🎨 Cores e estilo preferidos
+🔗 Domínio desejado (ex: escritoriosilva.adv.br)
+
+Nosso desenvolvedor vai receber e iniciar o projeto! 🚀`,
+    ],
+    botoes: null,
+    terminal: true,
+  },
+
+  // ─────────────────────────────────────────
+  // MSG_AGUARDANDO — Contato prefere aguardar nosso retorno
+  // ─────────────────────────────────────────
+  msg_aguardando: {
+    textos: [
+      `⏳ *Interesse registrado!*
+
+Seu pedido foi registrado e nosso desenvolvedor vai entrar em contato com você em breve.
+
+Se mudar de ideia e quiser adiantar, envie os documentos para:
+👉 *18996311933* informando seu *código de pedido*
+
+Obrigado pela confiança! 🤝`,
+    ],
+    botoes: null,
+    terminal: true,
+  },
+
+  // ─────────────────────────────────────────
+  // MSG_FINALIZADO — Contato concluiu com interesse (marca interna)
+  // ─────────────────────────────────────────
+  msg_finalizado: {
+    textos: [
+      `✅ Tudo certo! Seu cadastro está confirmado.
+
+Nosso desenvolvedor entrará em contato em breve para alinhar os detalhes do projeto.
+
+Se precisar de algo antes, é só chamar! 😊🚀`,
     ],
     botoes: null,
     terminal: true,
@@ -452,6 +531,10 @@ export const TRANSICOES: Record<string, Transicao> = {
   msg2_duvidas:    { proximaEtapa: 'msg_duvidas',   novoStatus: 'respondeu',        acao: 'enviar_msg_duvidas' },
   msg2_pensar:     { proximaEtapa: 'msg3c',         novoStatus: 'pendente_followup', acao: 'enviar_msg3c' },
 
+  // msg3a → Coleta de nome (depois segue para envio docs ou aguardo)
+  msg3a_enviar_docs: { proximaEtapa: 'msg_coletar_nome', novoStatus: 'aguardando_documentos', acao: 'coletar_nome' },
+  msg3a_aguardar:    { proximaEtapa: 'msg_coletar_nome', novoStatus: 'aguardando_contato',    acao: 'coletar_nome' },
+
   // msg2b → Qualificação (já tem site)
   msg2b_completo: { proximaEtapa: 'msg2b_fim', novoStatus: 'naoInteresse',     acao: 'enviar_msg2b_fim' },
   msg2b_parcial:  { proximaEtapa: 'msg2',      novoStatus: 'respondeu',        acao: 'enviar_msg2' },
@@ -491,6 +574,7 @@ export const MAPA_NUMERICO: Record<string, Record<number, string>> = {
   msg1:              { 1: 'msg1_sim',           2: 'msg1_site',          3: 'msg1_nao' },
   msg2:              { 1: 'msg2_contratar',     2: 'msg2_duvidas',       3: 'msg2_pensar' },
   msg2b:             { 1: 'msg2b_completo',     2: 'msg2b_parcial',      3: 'msg2b_naotem' },
+  msg3a:             { 1: 'msg3a_enviar_docs',  2: 'msg3a_aguardar' },
   msg_duvidas:       { 1: 'duvida_precos',      2: 'duvida_incluso',     3: 'duvida_processo' },
   msg_precos:        { 1: 'precos_contratar',   2: 'precos_personalizado', 3: 'precos_duvidas' },
   msg_incluso:       { 1: 'incluso_contratar',  2: 'incluso_personalizado', 3: 'incluso_duvidas' },

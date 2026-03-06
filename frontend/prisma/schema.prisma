@@ -27,6 +27,8 @@ model Contato {
 
   mensagens     Mensagem[]
   leads         Lead[]
+  agendamentos  Agendamento[]
+  pedidos       Pedido[]
 }
 
 model Campanha {
@@ -76,4 +78,50 @@ model LogErro {
   mensagem  String
   detalhes  String?
   criadoEm  DateTime @default(now())
+}
+
+model Agendamento {
+  id            Int      @id @default(autoincrement())
+  contatoId     Int
+  tipo          String   @default("aguardando_contato")
+  status        String   @default("pendente")
+  resumo        String?
+  notas         String?
+  dataContato   DateTime?
+  prioridade    String   @default("normal")
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  contato       Contato  @relation(fields: [contatoId], references: [id], onDelete: Cascade)
+}
+
+model Notificacao {
+  id          Int      @id @default(autoincrement())
+  tipo        String
+  titulo      String
+  mensagem    String
+  lida        Boolean  @default(false)
+  dados       String?
+  criadoEm    DateTime @default(now())
+}
+
+model Pedido {
+  id                 Int       @id @default(autoincrement())
+  codigo             String    @unique
+  contatoId          Int
+  nomeCliente        String
+  escritorio         String?
+  cidade             String?
+  areaAtuacao        String?
+  telefone           String
+  tipo               String    @default("site_chatbot")
+  status             String    @default("novo")
+  materiaisRecebidos String?
+  aprovado           Boolean   @default(false)
+  aprovadoEm         DateTime?
+  notas              String?
+  criadoEm           DateTime  @default(now())
+  atualizadoEm       DateTime  @updatedAt
+
+  contato            Contato   @relation(fields: [contatoId], references: [id], onDelete: Cascade)
 }
